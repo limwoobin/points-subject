@@ -23,7 +23,8 @@
 | 항목 | 상태 | 비고 |
 | --- | --- | --- |
 | 기능 — 적립 / 적립취소 | ✅ | 구현 완료 |
-| 기능 — 사용 / 사용취소 | ⏳ | 미구현 (도메인 모델 · 분배 알고리즘 · 재발급 로직 작업 예정) |
+| 기능 — 사용 | ✅ | 구현 완료 (분배 알고리즘 + orderNumber 멱등 차단) |
+| 기능 — 사용취소 | ⏳ | 미구현 (재발급 로직 + cancel-use row + 카운터 갱신) |
 | ERD 이미지 (필수) | ❌ | **본 저장소에는 아직 포함되어 있지 않습니다.** 추후 별도로 첨부할 예정입니다 |
 | AWS 아키텍처 (옵션) | — | 본 과제 범위에 포함하지 않았습니다 |
 | README | ✅ | 본 문서 |
@@ -152,14 +153,14 @@ Optional<PointUser> findForUpdate(@Param("userId") Long userId);
 
 ### 3.4 사용 / 사용취소 API 멱등성
 
-**사용/사용취소 API 는 멱등성 키 기반 멱등 보장이 필수입니다.** 비관적 락은 동시 요청 사이의 정합성만 보장하고, **시간차를 둔 클라이언트 재시도는 막지 못하기** 때문입니다.
+**사용/사용취소 API 는 자연 멱등 키로 중복 요청을 차단합니다.** 비관적 락은 동시 요청 사이의 정합성만 보장하고, **시간차를 둔 클라이언트 재시도는 막지 못하기** 때문입니다.
 
 | 행위 | 멱등 키 | 저장 위치 |
 | --- | --- | --- |
-| 사용 | `order_number` (PRD 요구사항으로 이미 존재) | `point_use(type=USE).order_number` UNIQUE |
-| 사용취소 | `cancellation_key` (클라이언트 발급) | `point_use(type=USE_CANCEL).cancellation_key` UNIQUE |
+| 사용 | `order_number` (PRD 요구사항으로 이미 존재) | `point_use.order_number` (DB UK 없이 application 레벨 중복 차단 — `point_use` 가 향후 `USE_CANCEL` row 도 담는 단일 테이블로 확장될 예정이라 컬럼 단위 UK 가 의미상 깔끔하지 않음) |
+| 사용취소 | `cancellation_key` (클라이언트 발급) | `point_use(type=USE_CANCEL).cancellation_key` (§3.4 작업 시 컬럼 추가) |
 
-처리 패턴은 회원 락 안에서 키로 기존 row 를 조회하고, 있으면 동일 응답을 반환(부수효과 없음)하며, 없으면 차감·복원 후 INSERT 합니다. 동일 키 + 다른 페이로드는 409 로 명시 실패시킵니다.
+회원 락 안에서 키로 기존 row 조회 → 있으면 **`409 Conflict` 로 명시 실패**시키고 부수효과 없이 거부합니다 (replay 모드 미채택 — 같은 주문에 두 번 사용되는 시나리오 자체가 비정상이라는 판단).
 
 적립 / 적립취소는 멱등 키를 강제하지 않습니다. 운영자 수기 적립은 같은 회원에게 의도적으로 N회 누르는 시나리오가 정상이며, 적립취소는 `earnId` 1:0..1 관계로 자연 중복이 방지되기 때문입니다.
 
@@ -236,7 +237,7 @@ config/                      FF4j 빈, JPA Auditing
 | --- | --- | --- | --- | --- |
 | POST | `/api/points/earn` | Command | 포인트 적립 | ✅ |
 | POST | `/api/points/earn/{earnId}/cancel` | Command | 적립 취소 | ✅ |
-| POST | `/api/points/use` | Command | 포인트 사용 (멱등 키: `order_number`) | ⏳ 미구현 |
+| POST | `/api/points/use` | Command | 포인트 사용 (`order_number` 중복 시 409 — DB UK 없이 application 레벨 차단) | ✅ |
 | POST | `/api/points/use/{useId}/cancel` | Command | 사용 취소 — 전체/부분 (멱등 키: `cancellation_key`) | ⏳ 미구현 |
 | GET | `/api/points/users/{userId}/balance` | Query | 잔액 조회 | ⏳ 미구현 |
 | GET | `/api/points/users/{userId}/history` | Query | 거래 이력 조회 | ⏳ 미구현 |

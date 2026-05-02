@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.example.pointssubject.controller.dto.EarnPointRequest;
 import com.example.pointssubject.controller.dto.EarnPointResponse;
 import com.example.pointssubject.controller.dto.UpdateUserMaxBalanceRequest;
+import com.example.pointssubject.controller.dto.UsePointRequest;
 import com.example.pointssubject.domain.entity.PointEarn;
 import com.example.pointssubject.domain.enums.EarnStatus;
 import com.example.pointssubject.repository.PointEarnRepository;
@@ -96,6 +97,40 @@ class PointApiE2ETest extends AbstractIntegrationTest {
             assertThat(refreshed.getStatus()).isEqualTo(EarnStatus.CANCELLED);
             assertThat(refreshed.getRemainingAmount()).isEqualTo(0L);
             assertThat(refreshed.getCancelledAt()).isNotNull();
+        }
+    }
+
+    @Nested
+    @DisplayName("POST /api/points/use — 사용")
+    class Use {
+
+        @Test
+        @DisplayName("적립 후 사용 요청을 보내면 201 Created 와 useId/allocations 가 응답되고 적립 row 의 remaining_amount 가 차감된다")
+        void use_success() throws Exception {
+            EarnPointRequest earnReq = new EarnPointRequest(USER_ID, 1000L, null);
+            String earnedBody = mockMvc.perform(post("/api/points/earn")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(earnReq)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+            EarnPointResponse earned = objectMapper.readValue(earnedBody, EarnPointResponse.class);
+
+            UsePointRequest useReq = new UsePointRequest(USER_ID, "ORD-E2E-1", 600L);
+            mockMvc.perform(post("/api/points/use")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(useReq)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.useId").isNumber())
+                .andExpect(jsonPath("$.userId").value(USER_ID))
+                .andExpect(jsonPath("$.orderNumber").value("ORD-E2E-1"))
+                .andExpect(jsonPath("$.amount").value(600))
+                .andExpect(jsonPath("$.allocations[0].earnId").value(earned.earnId()))
+                .andExpect(jsonPath("$.allocations[0].amount").value(600));
+
+            entityManager.flush();
+            entityManager.clear();
+            PointEarn refreshed = earnRepository.findById(earned.earnId()).orElseThrow();
+            assertThat(refreshed.getRemainingAmount()).isEqualTo(400L);
         }
     }
 

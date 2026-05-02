@@ -21,6 +21,11 @@ public enum PointErrorCode {
     // 적립취소 (POINT-2xx)
     EARN_NOT_FOUND("POINT-201", "적립 건을 찾을 수 없습니다", HttpStatus.NOT_FOUND),
     EARN_CANCEL_NOT_ALLOWED("POINT-202", "이미 사용되었거나 취소된 적립은 취소할 수 없습니다", HttpStatus.CONFLICT),
+
+    // 사용 (POINT-3xx)
+    USE_AMOUNT_INVALID("POINT-301", "사용 금액은 0보다 커야 합니다", HttpStatus.BAD_REQUEST),
+    USE_INSUFFICIENT_BALANCE("POINT-302", "보유 잔액이 사용 금액보다 부족합니다", HttpStatus.CONFLICT),
+    USE_ORDER_NUMBER_DUPLICATED("POINT-303", "이미 처리된 주문번호입니다", HttpStatus.CONFLICT),
     ;
 
     private final String code;

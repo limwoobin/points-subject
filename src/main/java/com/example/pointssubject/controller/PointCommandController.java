@@ -3,7 +3,10 @@ package com.example.pointssubject.controller;
 import com.example.pointssubject.controller.dto.CancelEarnResponse;
 import com.example.pointssubject.controller.dto.EarnPointRequest;
 import com.example.pointssubject.controller.dto.EarnPointResponse;
+import com.example.pointssubject.controller.dto.UsePointRequest;
+import com.example.pointssubject.controller.dto.UsePointResponse;
 import com.example.pointssubject.service.command.PointEarnCommandService;
+import com.example.pointssubject.service.command.PointUseCommandService;
 import com.example.pointssubject.service.command.dto.CancelEarnCommand;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
@@ -21,6 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class PointCommandController {
 
     private final PointEarnCommandService earnService;
+    private final PointUseCommandService useService;
 
     @PostMapping("/earn")
     public ResponseEntity<EarnPointResponse> earn(@RequestBody @Valid EarnPointRequest request) {
@@ -32,5 +36,11 @@ public class PointCommandController {
     public CancelEarnResponse cancelEarn(@PathVariable Long earnId) {
         var result = earnService.cancelEarn(new CancelEarnCommand(earnId));
         return CancelEarnResponse.from(result);
+    }
+
+    @PostMapping("/use")
+    public ResponseEntity<UsePointResponse> use(@RequestBody @Valid UsePointRequest request) {
+        var result = useService.use(request.toCommand());
+        return ResponseEntity.status(HttpStatus.CREATED).body(UsePointResponse.from(result));
     }
 }

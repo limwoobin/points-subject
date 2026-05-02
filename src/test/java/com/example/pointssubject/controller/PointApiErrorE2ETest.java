@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.example.pointssubject.controller.dto.EarnPointRequest;
 import com.example.pointssubject.controller.dto.EarnPointResponse;
 import com.example.pointssubject.controller.dto.UpdateUserMaxBalanceRequest;
+import com.example.pointssubject.controller.dto.UsePointRequest;
 import com.example.pointssubject.support.AbstractIntegrationTest;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.HashMap;
@@ -99,6 +100,39 @@ class PointApiErrorE2ETest extends AbstractIntegrationTest {
             mockMvc.perform(post("/api/points/earn/{earnId}/cancel", earned.earnId()))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.code").value("POINT-202"));
+        }
+
+        @Test
+        @DisplayName("적립 없이 사용을 시도하면 잔액 부족으로 409 + POINT-302 응답이 반환된다")
+        void use_insufficient_balance_returns_409() throws Exception {
+            UsePointRequest useReq = new UsePointRequest(USER_ID, "ORD-NOBAL", 1000L);
+            mockMvc.perform(post("/api/points/use")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(useReq)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("POINT-302"));
+        }
+
+        @Test
+        @DisplayName("같은 orderNumber 로 두 번 사용 요청을 보내면 두 번째 호출은 409 + POINT-303 응답이 반환된다")
+        void duplicate_order_number_returns_409() throws Exception {
+            EarnPointRequest earnReq = new EarnPointRequest(USER_ID, 1000L, null);
+            mockMvc.perform(post("/api/points/earn")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(earnReq)))
+                .andExpect(status().isCreated());
+
+            UsePointRequest useReq = new UsePointRequest(USER_ID, "ORD-DUP-E2E", 100L);
+            mockMvc.perform(post("/api/points/use")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(useReq)))
+                .andExpect(status().isCreated());
+
+            mockMvc.perform(post("/api/points/use")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(useReq)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("POINT-303"));
         }
     }
 

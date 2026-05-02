@@ -116,6 +116,21 @@ public class PointEarn extends BaseEntity {
         return !now.isBefore(expiresAt);
     }
 
+    /**
+     * 본 적립건에서 {@code amount} 만큼 사용 차감.
+     * 호출 전 {@link #isUsable(LocalDateTime)} 와 잔여액 충분 여부를 service 단에서 선검증해야 한다.
+     */
+    public void useFrom(long amount) {
+        if (amount <= 0 || amount > remainingAmount || status != EarnStatus.ACTIVE) {
+            throw new IllegalStateException(
+                "PointEarn cannot deduct: id=" + id
+                    + ", status=" + status
+                    + ", remaining=" + remainingAmount
+                    + ", requested=" + amount);
+        }
+        this.remainingAmount -= amount;
+    }
+
     /** 호출 전 {@link #isCancellable()} 선검증 필수. 본 메소드는 invariant 의 마지막 안전망. */
     public void cancel(LocalDateTime now) {
         if (!isCancellable()) {

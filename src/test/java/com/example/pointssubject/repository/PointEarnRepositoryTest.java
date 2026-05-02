@@ -128,6 +128,61 @@ class PointEarnRepositoryTest {
     }
 
     @Nested
+    @DisplayName("findActiveCandidatesForUse() — 사용 후보 조회 + 정렬")
+    class FindActiveCandidatesForUse {
+
+        @Test
+        @DisplayName("ACTIVE + remaining>0 + 미만료 row 만 반환되고 만료/소진/취소 row 는 제외된다")
+        void filters_to_usable_rows_only() {
+            PointEarn alive = saveEarn(USER_ID, PointSource.SYSTEM, 1000L, daysFromNow(30));
+            saveEarn(USER_ID, PointSource.SYSTEM, 500L, daysFromNow(-1)); // expired
+            PointEarn cancelled = saveEarn(USER_ID, PointSource.SYSTEM, 700L, daysFromNow(30));
+            cancelled.cancel(LocalDateTime.now());
+            em.flush();
+            em.clear();
+
+            var candidates = earnRepository.findActiveCandidatesForUse(USER_ID, LocalDateTime.now());
+
+            assertThat(candidates).extracting(PointEarn::getId).containsExactly(alive.getId());
+        }
+
+        @Test
+        @DisplayName("source=MANUAL 적립이 SYSTEM 적립보다 먼저 반환된다 (만료일이 더 늦더라도)")
+        void manual_takes_precedence_over_system_even_when_later_expiry() {
+            PointEarn system = saveEarn(USER_ID, PointSource.SYSTEM, 500L, daysFromNow(10));
+            PointEarn manual = saveEarn(USER_ID, PointSource.MANUAL, 500L, daysFromNow(60));
+
+            var candidates = earnRepository.findActiveCandidatesForUse(USER_ID, LocalDateTime.now());
+
+            assertThat(candidates).extracting(PointEarn::getId)
+                .containsExactly(manual.getId(), system.getId());
+        }
+
+        @Test
+        @DisplayName("같은 source 안에서는 만료일이 더 가까운 적립이 먼저 반환된다")
+        void earlier_expiry_returned_first_within_same_source() {
+            PointEarn late = saveEarn(USER_ID, PointSource.SYSTEM, 500L, daysFromNow(60));
+            PointEarn early = saveEarn(USER_ID, PointSource.SYSTEM, 500L, daysFromNow(10));
+
+            var candidates = earnRepository.findActiveCandidatesForUse(USER_ID, LocalDateTime.now());
+
+            assertThat(candidates).extracting(PointEarn::getId)
+                .containsExactly(early.getId(), late.getId());
+        }
+
+        @Test
+        @DisplayName("다른 회원의 적립은 후보에서 제외된다")
+        void excludes_other_users() {
+            PointEarn mine = saveEarn(USER_ID, PointSource.SYSTEM, 500L, daysFromNow(10));
+            saveEarn(OTHER_USER_ID, PointSource.SYSTEM, 9999L, daysFromNow(10));
+
+            var candidates = earnRepository.findActiveCandidatesForUse(USER_ID, LocalDateTime.now());
+
+            assertThat(candidates).extracting(PointEarn::getId).containsExactly(mine.getId());
+        }
+    }
+
+    @Nested
     @DisplayName("Hibernate 어노테이션 동작")
     class HibernateAnnotations {
 
@@ -159,7 +214,11 @@ class PointEarnRepositoryTest {
     }
 
     private PointEarn saveEarn(Long userId, long amount, LocalDateTime expiresAt) {
-        PointEarn earn = PointEarn.earn(userId, amount, PointSource.SYSTEM, expiresAt);
+        return saveEarn(userId, PointSource.SYSTEM, amount, expiresAt);
+    }
+
+    private PointEarn saveEarn(Long userId, PointSource source, long amount, LocalDateTime expiresAt) {
+        PointEarn earn = PointEarn.earn(userId, amount, source, expiresAt);
         return earnRepository.saveAndFlush(earn);
     }
 
