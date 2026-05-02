@@ -1,0 +1,46 @@
+spring:
+  application:
+    name: points-subject
+
+  datasource:
+    url: "jdbc:h2:mem:points;DB_CLOSE_DELAY=-1;MODE=MySQL"
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+  jpa:
+    hibernate:
+      ddl-auto: create
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+    open-in-view: false
+
+  # GlobalExceptionHandler.handleNoHandler 가 동작하려면 다음 두 설정이 필수.
+  # 1) Spring Boot 3.x 기본 false → 미설정 시 NoHandlerFoundException 자체가 발생하지 않음.
+  # 2) static resource handler 를 비활성화해야 임의 경로가 그쪽으로 빨려들어가지 않음.
+  mvc:
+    throw-exception-if-no-handler-found: true
+  web:
+    resources:
+      add-mappings: false
+
+# 도메인 정책 시드 값. 부팅 시 FF4j Property store 에 INSERT, 이후 런타임 SoT 는 FF4j (Web Console 로 변경).
+points:
+  earn:
+    min-per-transaction: 1
+    max-per-transaction: 100000
+  balance:
+    max-per-user: 1000000
+  expiry:
+    default-days: 365
+    min-days: 1
+    max-days: 1825
+  use-cancel:
+    reissue-days: 365
