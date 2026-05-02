@@ -8,7 +8,6 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.example.pointssubject.controller.dto.EarnPointRequest;
 import com.example.pointssubject.controller.dto.EarnPointResponse;
 import com.example.pointssubject.controller.dto.UpdateUserMaxBalanceRequest;
-import com.example.pointssubject.domain.enums.PointSource;
 import com.example.pointssubject.support.AbstractIntegrationTest;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.util.HashMap;
@@ -34,7 +33,7 @@ class PointApiErrorE2ETest extends AbstractIntegrationTest {
         @Test
         @DisplayName("정책 최댓값을 초과하는 amount(100_001) 로 적립 요청을 보내면 400 + POINT-101 응답이 반환된다")
         void invalid_earn_amount_returns_400() throws Exception {
-            EarnPointRequest request = new EarnPointRequest(USER_ID, 100_001L, PointSource.SYSTEM, null);
+            EarnPointRequest request = new EarnPointRequest(USER_ID, 100_001L, null);
 
             mockMvc.perform(post("/api/points/earn")
                     .contentType(MediaType.APPLICATION_JSON)
@@ -46,7 +45,7 @@ class PointApiErrorE2ETest extends AbstractIntegrationTest {
         @Test
         @DisplayName("정책 최솟값 미만의 expiryDays(0) 로 적립 요청을 보내면 400 + POINT-102 응답이 반환된다")
         void invalid_expiry_days_returns_400() throws Exception {
-            EarnPointRequest request = new EarnPointRequest(USER_ID, 1000L, PointSource.SYSTEM, 0);
+            EarnPointRequest request = new EarnPointRequest(USER_ID, 1000L, 0);
 
             mockMvc.perform(post("/api/points/earn")
                     .contentType(MediaType.APPLICATION_JSON)
@@ -65,7 +64,7 @@ class PointApiErrorE2ETest extends AbstractIntegrationTest {
                     .content(objectMapper.writeValueAsString(setLimit)))
                 .andExpect(status().isOk());
 
-            EarnPointRequest earnReq = new EarnPointRequest(USER_ID, 1L, PointSource.SYSTEM, null);
+            EarnPointRequest earnReq = new EarnPointRequest(USER_ID, 1L, null);
             mockMvc.perform(post("/api/points/earn")
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(earnReq)))
@@ -84,7 +83,7 @@ class PointApiErrorE2ETest extends AbstractIntegrationTest {
         @Test
         @DisplayName("이미 취소된 적립에 대해 다시 취소를 요청하면 409 + POINT-202 응답이 반환된다")
         void earn_cancel_not_allowed_returns_409() throws Exception {
-            EarnPointRequest earnReq = new EarnPointRequest(USER_ID, 1000L, PointSource.SYSTEM, null);
+            EarnPointRequest earnReq = new EarnPointRequest(USER_ID, 1000L, null);
             String earnedBody = mockMvc.perform(post("/api/points/earn")
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(earnReq)))
@@ -113,7 +112,6 @@ class PointApiErrorE2ETest extends AbstractIntegrationTest {
             // userId 필드 자체를 빼서 @NotNull 위반 트리거
             Map<String, Object> body = new HashMap<>();
             body.put("amount", 1000L);
-            body.put("source", "SYSTEM");
 
             mockMvc.perform(post("/api/points/earn")
                     .contentType(MediaType.APPLICATION_JSON)

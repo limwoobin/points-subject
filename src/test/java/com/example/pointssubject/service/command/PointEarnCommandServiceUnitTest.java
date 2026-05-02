@@ -15,11 +15,8 @@ import com.example.pointssubject.domain.entity.PointEarn;
 import com.example.pointssubject.domain.entity.PointUser;
 import com.example.pointssubject.domain.enums.EarnStatus;
 import com.example.pointssubject.domain.enums.PointSource;
-import com.example.pointssubject.exception.BalanceLimitExceededException;
-import com.example.pointssubject.exception.EarnCancelNotAllowedException;
-import com.example.pointssubject.exception.EarnNotFoundException;
-import com.example.pointssubject.exception.InvalidEarnAmountException;
-import com.example.pointssubject.exception.InvalidExpiryDaysException;
+import com.example.pointssubject.exception.PointErrorCode;
+import com.example.pointssubject.exception.PointException;
 import com.example.pointssubject.policy.PointPolicyService;
 import com.example.pointssubject.repository.PointEarnRepository;
 import com.example.pointssubject.repository.PointUserRepository;
@@ -71,7 +68,7 @@ class PointEarnCommandServiceUnitTest {
                 .willAnswer(inv -> inv.getArgument(0));
 
             EarnPointResult result = service.earn(
-                new EarnPointCommand(USER_ID, 1000L, PointSource.SYSTEM, 30));
+                new EarnPointCommand(USER_ID, 1000L, 30));
 
             assertThat(result.userId()).isEqualTo(USER_ID);
             assertThat(result.amount()).isEqualTo(1000L);
@@ -84,6 +81,23 @@ class PointEarnCommandServiceUnitTest {
             assertThat(saved.getRemainingAmount()).isEqualTo(1000L);
             assertThat(saved.getStatus()).isEqualTo(EarnStatus.ACTIVE);
         }
+
+        @Test
+        @DisplayName("earnManual 으로 적립하면 PointEarn 의 source 가 MANUAL 로 저장된다")
+        void earn_manual_persists_with_manual_source() {
+            PointUser user = mock(PointUser.class);
+            given(user.effectiveMaxBalance(anyLong())).willReturn(1_000_000L);
+            given(userRepository.findByUserIdForUpdate(USER_ID)).willReturn(Optional.of(user));
+            given(earnRepository.sumActiveBalance(eq(USER_ID), any(LocalDateTime.class))).willReturn(0L);
+            given(earnRepository.save(any(PointEarn.class)))
+                .willAnswer(inv -> inv.getArgument(0));
+
+            service.earnManual(new EarnPointCommand(USER_ID, 1000L, null));
+
+            ArgumentCaptor<PointEarn> captor = ArgumentCaptor.forClass(PointEarn.class);
+            verify(earnRepository).save(captor.capture());
+            assertThat(captor.getValue().getSource()).isEqualTo(PointSource.MANUAL);
+        }
     }
 
     @Nested
@@ -91,58 +105,64 @@ class PointEarnCommandServiceUnitTest {
     class EarnFailure {
 
         @Test
-        @DisplayName("amount 가 정책 최솟값(1) 미만이면 InvalidEarnAmountException 을 던지고 영속화하지 않는다")
+        @DisplayName("amount 가 정책 최솟값(1) 미만이면 EARN_AMOUNT_OUT_OF_RANGE 를 던지고 영속화하지 않는다")
         void throws_when_amount_is_below_policy_minimum() {
             assertThatThrownBy(() ->
-                service.earn(new EarnPointCommand(USER_ID, 0L, PointSource.SYSTEM, null)))
-                .isInstanceOf(InvalidEarnAmountException.class);
+                service.earn(new EarnPointCommand(USER_ID, 0L, null)))
+                .isInstanceOf(PointException.class)
+                .extracting("errorCode").isEqualTo(PointErrorCode.EARN_AMOUNT_OUT_OF_RANGE);
 
             verify(userRepository, never()).findByUserIdForUpdate(anyLong());
             verify(earnRepository, never()).save(any());
         }
 
         @Test
-        @DisplayName("amount 가 정책 최댓값(100,000)을 초과하면 InvalidEarnAmountException 을 던진다")
+        @DisplayName("amount 가 정책 최댓값(100,000)을 초과하면 EARN_AMOUNT_OUT_OF_RANGE 를 던진다")
         void throws_when_amount_is_above_policy_maximum() {
             assertThatThrownBy(() ->
-                service.earn(new EarnPointCommand(USER_ID, 100_001L, PointSource.SYSTEM, null)))
-                .isInstanceOf(InvalidEarnAmountException.class);
+                service.earn(new EarnPointCommand(USER_ID, 100_001L, null)))
+                .isInstanceOf(PointException.class)
+                .extracting("errorCode").isEqualTo(PointErrorCode.EARN_AMOUNT_OUT_OF_RANGE);
         }
 
         @Test
-        @DisplayName("amount 가 음수이면 InvalidEarnAmountException 을 던진다")
+        @DisplayName("amount 가 음수이면 EARN_AMOUNT_OUT_OF_RANGE 를 던진다")
         void throws_when_amount_is_negative() {
             assertThatThrownBy(() ->
-                service.earn(new EarnPointCommand(USER_ID, -1L, PointSource.SYSTEM, null)))
-                .isInstanceOf(InvalidEarnAmountException.class);
+                service.earn(new EarnPointCommand(USER_ID, -1L, null)))
+                .isInstanceOf(PointException.class)
+                .extracting("errorCode").isEqualTo(PointErrorCode.EARN_AMOUNT_OUT_OF_RANGE);
         }
 
         @Test
-        @DisplayName("expiryDays 가 정책 최솟값(1) 미만이면 InvalidExpiryDaysException 을 던진다")
+        @DisplayName("expiryDays 가 정책 최솟값(1) 미만이면 EARN_EXPIRY_OUT_OF_RANGE 를 던진다")
         void throws_when_expiry_days_below_minimum() {
             assertThatThrownBy(() ->
-                service.earn(new EarnPointCommand(USER_ID, 1000L, PointSource.SYSTEM, 0)))
-                .isInstanceOf(InvalidExpiryDaysException.class);
+                service.earn(new EarnPointCommand(USER_ID, 1000L, 0)))
+                .isInstanceOf(PointException.class)
+                .extracting("errorCode").isEqualTo(PointErrorCode.EARN_EXPIRY_OUT_OF_RANGE);
         }
 
         @Test
-        @DisplayName("expiryDays 가 정책 최댓값(1825) 이상이면 InvalidExpiryDaysException 을 던진다")
+        @DisplayName("expiryDays 가 정책 최댓값(1825) 이상이면 EARN_EXPIRY_OUT_OF_RANGE 를 던진다")
         void throws_when_expiry_days_at_or_above_maximum() {
             assertThatThrownBy(() ->
-                service.earn(new EarnPointCommand(USER_ID, 1000L, PointSource.SYSTEM, 1825)))
-                .isInstanceOf(InvalidExpiryDaysException.class);
+                service.earn(new EarnPointCommand(USER_ID, 1000L, 1825)))
+                .isInstanceOf(PointException.class)
+                .extracting("errorCode").isEqualTo(PointErrorCode.EARN_EXPIRY_OUT_OF_RANGE);
         }
 
         @Test
-        @DisplayName("expiryDays 가 음수이면 InvalidExpiryDaysException 을 던진다")
+        @DisplayName("expiryDays 가 음수이면 EARN_EXPIRY_OUT_OF_RANGE 를 던진다")
         void throws_when_expiry_days_is_negative() {
             assertThatThrownBy(() ->
-                service.earn(new EarnPointCommand(USER_ID, 1000L, PointSource.SYSTEM, -1)))
-                .isInstanceOf(InvalidExpiryDaysException.class);
+                service.earn(new EarnPointCommand(USER_ID, 1000L, -1)))
+                .isInstanceOf(PointException.class)
+                .extracting("errorCode").isEqualTo(PointErrorCode.EARN_EXPIRY_OUT_OF_RANGE);
         }
 
         @Test
-        @DisplayName("현재 잔액과 신규 적립의 합이 회원 한도를 초과하면 BalanceLimitExceededException 을 던지고 영속화하지 않는다")
+        @DisplayName("현재 잔액과 신규 적립의 합이 회원 한도를 초과하면 EARN_BALANCE_LIMIT_EXCEEDED 를 던지고 영속화하지 않는다")
         void throws_when_balance_plus_amount_exceeds_user_limit() {
             PointUser user = mock(PointUser.class);
             given(user.effectiveMaxBalance(anyLong())).willReturn(1000L);
@@ -150,14 +170,15 @@ class PointEarnCommandServiceUnitTest {
             given(earnRepository.sumActiveBalance(eq(USER_ID), any(LocalDateTime.class))).willReturn(600L);
 
             assertThatThrownBy(() ->
-                service.earn(new EarnPointCommand(USER_ID, 401L, PointSource.SYSTEM, null)))
-                .isInstanceOf(BalanceLimitExceededException.class);
+                service.earn(new EarnPointCommand(USER_ID, 401L, null)))
+                .isInstanceOf(PointException.class)
+                .extracting("errorCode").isEqualTo(PointErrorCode.EARN_BALANCE_LIMIT_EXCEEDED);
 
             verify(earnRepository, never()).save(any(PointEarn.class));
         }
 
         @Test
-        @DisplayName("회원 한도가 0 으로 설정된 경우 어떤 양수 amount 로 적립을 시도해도 BalanceLimitExceededException 을 던진다")
+        @DisplayName("회원 한도가 0 으로 설정된 경우 어떤 양수 amount 로 적립을 시도해도 EARN_BALANCE_LIMIT_EXCEEDED 를 던진다")
         void throws_when_user_limit_is_zero() {
             PointUser user = mock(PointUser.class);
             given(user.effectiveMaxBalance(anyLong())).willReturn(0L);
@@ -165,8 +186,9 @@ class PointEarnCommandServiceUnitTest {
             given(earnRepository.sumActiveBalance(eq(USER_ID), any(LocalDateTime.class))).willReturn(0L);
 
             assertThatThrownBy(() ->
-                service.earn(new EarnPointCommand(USER_ID, 1L, PointSource.SYSTEM, null)))
-                .isInstanceOf(BalanceLimitExceededException.class);
+                service.earn(new EarnPointCommand(USER_ID, 1L, null)))
+                .isInstanceOf(PointException.class)
+                .extracting("errorCode").isEqualTo(PointErrorCode.EARN_BALANCE_LIMIT_EXCEEDED);
         }
     }
 
@@ -195,12 +217,13 @@ class PointEarnCommandServiceUnitTest {
     class CancelEarnFailure {
 
         @Test
-        @DisplayName("존재하지 않는 earnId 로 취소를 시도하면 EarnNotFoundException 을 던지고 회원 락도 시도하지 않는다")
+        @DisplayName("존재하지 않는 earnId 로 취소를 시도하면 EARN_NOT_FOUND 를 던지고 회원 락도 시도하지 않는다")
         void throws_when_earn_id_does_not_exist() {
             given(earnRepository.findById(EARN_ID)).willReturn(Optional.empty());
 
             assertThatThrownBy(() -> service.cancelEarn(new CancelEarnCommand(EARN_ID)))
-                .isInstanceOf(EarnNotFoundException.class);
+                .isInstanceOf(PointException.class)
+                .extracting("errorCode").isEqualTo(PointErrorCode.EARN_NOT_FOUND);
 
             verify(userRepository, never()).findByUserIdForUpdate(anyLong());
         }
@@ -220,7 +243,7 @@ class PointEarnCommandServiceUnitTest {
         }
 
         @Test
-        @DisplayName("이미 취소되었거나 일부 사용된 적립(isCancellable=false)을 취소 시도하면 EarnCancelNotAllowedException 을 던지고 cancel 을 호출하지 않는다")
+        @DisplayName("이미 취소되었거나 일부 사용된 적립(isCancellable=false)을 취소 시도하면 EARN_CANCEL_NOT_ALLOWED 를 던지고 cancel 을 호출하지 않는다")
         void throws_when_earn_is_not_cancellable() {
             PointEarn earn = mock(PointEarn.class);
             given(earn.getUserId()).willReturn(USER_ID);
@@ -233,7 +256,8 @@ class PointEarnCommandServiceUnitTest {
                 .willReturn(Optional.of(mock(PointUser.class)));
 
             assertThatThrownBy(() -> service.cancelEarn(new CancelEarnCommand(EARN_ID)))
-                .isInstanceOf(EarnCancelNotAllowedException.class);
+                .isInstanceOf(PointException.class)
+                .extracting("errorCode").isEqualTo(PointErrorCode.EARN_CANCEL_NOT_ALLOWED);
 
             verify(earn, never()).cancel(any());
         }

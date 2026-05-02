@@ -4,7 +4,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.example.pointssubject.domain.entity.PointEarn;
 import com.example.pointssubject.domain.enums.EarnStatus;
-import com.example.pointssubject.domain.enums.PointSource;
 import com.example.pointssubject.repository.PointEarnRepository;
 import com.example.pointssubject.service.command.dto.CancelEarnCommand;
 import com.example.pointssubject.service.command.dto.CancelEarnResult;
@@ -37,7 +36,7 @@ class CancelEarnCommandServiceTest extends AbstractIntegrationTest {
         @DisplayName("적립 직후 취소를 호출하면 status 가 CANCELLED 로, remaining 이 0 으로, cancelledAt 이 현재시각으로 갱신된다")
         void cancel_just_after_earn() {
             EarnPointResult earned = earnService.earn(
-                new EarnPointCommand(USER_ID, 1000L, PointSource.SYSTEM, null));
+                new EarnPointCommand(USER_ID, 1000L, null));
 
             CancelEarnResult result = earnService.cancelEarn(new CancelEarnCommand(earned.earnId()));
 
@@ -57,8 +56,8 @@ class CancelEarnCommandServiceTest extends AbstractIntegrationTest {
         @Test
         @DisplayName("적립을 취소하면 해당 적립 금액만큼 회원 잔액 합계에서 제외된다 (status=CANCELLED 필터)")
         void cancelled_earn_excluded_from_balance() {
-            EarnPointResult e1 = earnService.earn(new EarnPointCommand(USER_ID, 1000L, PointSource.SYSTEM, null));
-            earnService.earn(new EarnPointCommand(USER_ID, 500L, PointSource.SYSTEM, null));
+            EarnPointResult e1 = earnService.earn(new EarnPointCommand(USER_ID, 1000L, null));
+            earnService.earn(new EarnPointCommand(USER_ID, 500L, null));
 
             assertThat(earnRepository.sumActiveBalance(USER_ID, LocalDateTime.now()))
                 .isEqualTo(1500L);
@@ -73,7 +72,7 @@ class CancelEarnCommandServiceTest extends AbstractIntegrationTest {
         @DisplayName("적립취소 결과는 원본 적립의 earnId 를 그대로 가리킨다 (별도 PK 발급 없음)")
         void cancel_reuses_original_earn_id() {
             EarnPointResult earned = earnService.earn(
-                new EarnPointCommand(USER_ID, 1000L, PointSource.SYSTEM, null));
+                new EarnPointCommand(USER_ID, 1000L, null));
 
             CancelEarnResult result = earnService.cancelEarn(new CancelEarnCommand(earned.earnId()));
 
@@ -84,7 +83,7 @@ class CancelEarnCommandServiceTest extends AbstractIntegrationTest {
         @DisplayName("만료된 적립이라도 미사용 상태이면 취소가 가능하다 (만료/취소는 독립 컬럼)")
         void expired_earn_can_still_be_cancelled() {
             EarnPointResult earned = earnService.earn(
-                new EarnPointCommand(USER_ID, 1000L, PointSource.SYSTEM, null));
+                new EarnPointCommand(USER_ID, 1000L, null));
 
             // expires_at 을 과거로 강제 — 시간 경과 시뮬레이션
             entityManager.createQuery(
@@ -107,7 +106,7 @@ class CancelEarnCommandServiceTest extends AbstractIntegrationTest {
         @DisplayName("적립을 취소하면 updatedAt / updatedBy 가 갱신된다")
         void audit_columns_updated_on_cancel() {
             EarnPointResult earned = earnService.earn(
-                new EarnPointCommand(USER_ID, 1000L, PointSource.SYSTEM, null));
+                new EarnPointCommand(USER_ID, 1000L, null));
 
             entityManager.flush();
             entityManager.clear();

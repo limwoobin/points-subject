@@ -9,7 +9,8 @@ import com.example.pointssubject.domain.entity.PointUser;
 import com.example.pointssubject.domain.enums.EarnStatus;
 import com.example.pointssubject.domain.enums.PointOrigin;
 import com.example.pointssubject.domain.enums.PointSource;
-import com.example.pointssubject.exception.BalanceLimitExceededException;
+import com.example.pointssubject.exception.PointErrorCode;
+import com.example.pointssubject.exception.PointException;
 import com.example.pointssubject.policy.PointPolicyService;
 import com.example.pointssubject.repository.PointEarnRepository;
 import com.example.pointssubject.repository.PointUserRepository;
@@ -41,7 +42,7 @@ class EarnPointCommandServiceTest extends AbstractIntegrationTest {
         @DisplayName("적립을 호출하면 PointEarn 이 생성되고 remaining=initial, status=ACTIVE, origin=NORMAL 로 저장된다")
         void earn_creates_point_earn_row() {
             EarnPointResult result = earnService.earn(
-                new EarnPointCommand(USER_ID, 1000L, PointSource.SYSTEM, null));
+                new EarnPointCommand(USER_ID, 1000L, null));
 
             assertThat(result.earnId()).isNotNull();
             assertThat(result.userId()).isEqualTo(USER_ID);
@@ -61,7 +62,7 @@ class EarnPointCommandServiceTest extends AbstractIntegrationTest {
         void earn_upserts_point_user_for_first_time_user() {
             assertThat(userRepository.findById(USER_ID)).isEmpty();
 
-            earnService.earn(new EarnPointCommand(USER_ID, 1000L, PointSource.SYSTEM, null));
+            earnService.earn(new EarnPointCommand(USER_ID, 1000L, null));
 
             assertThat(userRepository.findById(USER_ID)).isPresent();
         }
@@ -75,7 +76,7 @@ class EarnPointCommandServiceTest extends AbstractIntegrationTest {
         @DisplayName("정책 최솟값(1) 으로 적립을 시도하면 적립이 성공한다")
         void earn_with_min_amount_succeeds() {
             EarnPointResult result = earnService.earn(
-                new EarnPointCommand(USER_ID, policy.earnMin(), PointSource.SYSTEM, null));
+                new EarnPointCommand(USER_ID, policy.earnMin(), null));
             assertThat(result.amount()).isEqualTo(policy.earnMin());
         }
 
@@ -83,7 +84,7 @@ class EarnPointCommandServiceTest extends AbstractIntegrationTest {
         @DisplayName("정책 최댓값(100,000) 으로 적립을 시도하면 적립이 성공한다")
         void earn_with_max_amount_succeeds() {
             EarnPointResult result = earnService.earn(
-                new EarnPointCommand(USER_ID, policy.earnMax(), PointSource.SYSTEM, null));
+                new EarnPointCommand(USER_ID, policy.earnMax(), null));
             assertThat(result.amount()).isEqualTo(policy.earnMax());
         }
     }
@@ -95,17 +96,15 @@ class EarnPointCommandServiceTest extends AbstractIntegrationTest {
         @Test
         @DisplayName("회원에 max_balance override 가 있으면 글로벌 default 가 아닌 override 값으로 한도가 적용된다")
         void user_override_takes_precedence() {
-            // 글로벌 한도보다 작은 회원별 한도 설정
             long userOverride = 500L;
             userRepository.saveAndFlush(new PointUserTestFactory(USER_ID, userOverride).build());
 
-            // override 한도 안쪽 적립은 성공
-            earnService.earn(new EarnPointCommand(USER_ID, userOverride, PointSource.SYSTEM, null));
+            earnService.earn(new EarnPointCommand(USER_ID, userOverride, null));
 
-            // override 초과는 실패 (글로벌 default보다 작은 값임에도)
             assertThatThrownBy(() ->
-                earnService.earn(new EarnPointCommand(USER_ID, 1L, PointSource.SYSTEM, null)))
-                .isInstanceOf(BalanceLimitExceededException.class);
+                earnService.earn(new EarnPointCommand(USER_ID, 1L, null)))
+                .isInstanceOf(PointException.class)
+                .extracting("errorCode").isEqualTo(PointErrorCode.EARN_BALANCE_LIMIT_EXCEEDED);
         }
 
         @Test
@@ -114,15 +113,15 @@ class EarnPointCommandServiceTest extends AbstractIntegrationTest {
             long override = 1000L;
             userRepository.saveAndFlush(new PointUserTestFactory(USER_ID, override).build());
 
-            earnService.earn(new EarnPointCommand(USER_ID, 600L, PointSource.SYSTEM, null));
+            earnService.earn(new EarnPointCommand(USER_ID, 600L, null));
             EarnPointResult last = earnService.earn(
-                new EarnPointCommand(USER_ID, 400L, PointSource.SYSTEM, null));
+                new EarnPointCommand(USER_ID, 400L, null));
             assertThat(last.amount()).isEqualTo(400L);
 
-            // 한도 도달 후 1원이라도 추가하면 초과
             assertThatThrownBy(() ->
-                earnService.earn(new EarnPointCommand(USER_ID, 1L, PointSource.SYSTEM, null)))
-                .isInstanceOf(BalanceLimitExceededException.class);
+                earnService.earn(new EarnPointCommand(USER_ID, 1L, null)))
+                .isInstanceOf(PointException.class)
+                .extracting("errorCode").isEqualTo(PointErrorCode.EARN_BALANCE_LIMIT_EXCEEDED);
         }
 
         @Test
@@ -132,15 +131,14 @@ class EarnPointCommandServiceTest extends AbstractIntegrationTest {
             long override = 500L;
             userRepository.saveAndFlush(new PointUserTestFactory(USER_ID, override).build());
 
-            // USER_ID 는 자기 한도까지 채워 추가 차단
-            earnService.earn(new EarnPointCommand(USER_ID, 500L, PointSource.SYSTEM, null));
+            earnService.earn(new EarnPointCommand(USER_ID, 500L, null));
             assertThatThrownBy(() ->
-                earnService.earn(new EarnPointCommand(USER_ID, 1L, PointSource.SYSTEM, null)))
-                .isInstanceOf(BalanceLimitExceededException.class);
+                earnService.earn(new EarnPointCommand(USER_ID, 1L, null)))
+                .isInstanceOf(PointException.class)
+                .extracting("errorCode").isEqualTo(PointErrorCode.EARN_BALANCE_LIMIT_EXCEEDED);
 
-            // 다른 회원은 영향 없이 적립 가능 (자체 한도 = 글로벌 default)
             EarnPointResult other = earnService.earn(
-                new EarnPointCommand(otherUserId, 1000L, PointSource.SYSTEM, null));
+                new EarnPointCommand(otherUserId, 1000L, null));
             assertThat(other.amount()).isEqualTo(1000L);
         }
 
@@ -150,19 +148,17 @@ class EarnPointCommandServiceTest extends AbstractIntegrationTest {
             long override = 1000L;
             userRepository.saveAndFlush(new PointUserTestFactory(USER_ID, override).build());
 
-            // 한도 도달 → 추가 적립 차단
             EarnPointResult e1 = earnService.earn(
-                new EarnPointCommand(USER_ID, override, PointSource.SYSTEM, null));
+                new EarnPointCommand(USER_ID, override, null));
             assertThatThrownBy(() ->
-                earnService.earn(new EarnPointCommand(USER_ID, 1L, PointSource.SYSTEM, null)))
-                .isInstanceOf(BalanceLimitExceededException.class);
+                earnService.earn(new EarnPointCommand(USER_ID, 1L, null)))
+                .isInstanceOf(PointException.class)
+                .extracting("errorCode").isEqualTo(PointErrorCode.EARN_BALANCE_LIMIT_EXCEEDED);
 
-            // 취소 → 한도 회복
             earnService.cancelEarn(new CancelEarnCommand(e1.earnId()));
 
-            // 동일 금액 재적립 가능
             EarnPointResult re = earnService.earn(
-                new EarnPointCommand(USER_ID, override, PointSource.SYSTEM, null));
+                new EarnPointCommand(USER_ID, override, null));
             assertThat(re.amount()).isEqualTo(override);
         }
     }
@@ -174,8 +170,8 @@ class EarnPointCommandServiceTest extends AbstractIntegrationTest {
         @Test
         @DisplayName("두 번 적립하면 각자 다른 id 를 가진 row 가 생성되고 amount/remaining 을 독립 보유한다")
         void earn_row_owns_amount_and_remaining_independently() {
-            EarnPointResult r1 = earnService.earn(new EarnPointCommand(USER_ID, 1000L, PointSource.SYSTEM, null));
-            EarnPointResult r2 = earnService.earn(new EarnPointCommand(USER_ID,  500L, PointSource.SYSTEM, null));
+            EarnPointResult r1 = earnService.earn(new EarnPointCommand(USER_ID, 1000L, null));
+            EarnPointResult r2 = earnService.earn(new EarnPointCommand(USER_ID,  500L, null));
 
             assertThat(r1.earnId()).isNotEqualTo(r2.earnId());
 
@@ -187,37 +183,29 @@ class EarnPointCommandServiceTest extends AbstractIntegrationTest {
     }
 
     @Nested
-    @DisplayName("source 식별 — 수기/시스템 구분")
-    class ManualSource {
+    @DisplayName("source 식별 — 일반(SYSTEM) vs 수기(MANUAL)")
+    class SourceIdentification {
 
         @Test
-        @DisplayName("source=MANUAL 로 적립하면 PointEarn 의 source 가 MANUAL 로 저장된다")
-        void manual_source_is_persisted() {
+        @DisplayName("earn(...) 으로 적립하면 PointEarn 의 source 가 SYSTEM 으로 저장된다")
+        void earn_persists_with_system_source() {
             EarnPointResult result = earnService.earn(
-                new EarnPointCommand(USER_ID, 1000L, PointSource.MANUAL, null));
+                new EarnPointCommand(USER_ID, 1000L, null));
+
+            PointEarn saved = earnRepository.findById(result.earnId()).orElseThrow();
+            assertThat(saved.getSource()).isEqualTo(PointSource.SYSTEM);
+            assertThat(result.source()).isEqualTo(PointSource.SYSTEM);
+        }
+
+        @Test
+        @DisplayName("earnManual(...) 으로 적립하면 PointEarn 의 source 가 MANUAL 로 저장된다")
+        void earn_manual_persists_with_manual_source() {
+            EarnPointResult result = earnService.earnManual(
+                new EarnPointCommand(USER_ID, 1000L, null));
 
             PointEarn saved = earnRepository.findById(result.earnId()).orElseThrow();
             assertThat(saved.getSource()).isEqualTo(PointSource.MANUAL);
             assertThat(result.source()).isEqualTo(PointSource.MANUAL);
-        }
-
-        @Test
-        @DisplayName("source=SYSTEM 로 적립하면 PointEarn 의 source 가 SYSTEM 으로 저장된다")
-        void system_source_is_persisted() {
-            EarnPointResult result = earnService.earn(
-                new EarnPointCommand(USER_ID, 1000L, PointSource.SYSTEM, null));
-
-            PointEarn saved = earnRepository.findById(result.earnId()).orElseThrow();
-            assertThat(saved.getSource()).isEqualTo(PointSource.SYSTEM);
-        }
-
-        @Test
-        @DisplayName("source 를 지정하지 않으면 SYSTEM 이 기본값으로 적용된다")
-        void null_source_defaults_to_system() {
-            EarnPointResult result = earnService.earn(
-                new EarnPointCommand(USER_ID, 1000L, null, null));
-
-            assertThat(result.source()).isEqualTo(PointSource.SYSTEM);
         }
     }
 
@@ -230,7 +218,7 @@ class EarnPointCommandServiceTest extends AbstractIntegrationTest {
         void default_expiry_days_when_not_specified() {
             LocalDateTime before = LocalDateTime.now();
             EarnPointResult result = earnService.earn(
-                new EarnPointCommand(USER_ID, 1000L, PointSource.SYSTEM, null));
+                new EarnPointCommand(USER_ID, 1000L, null));
             LocalDateTime after = LocalDateTime.now();
 
             long days = ChronoUnit.DAYS.between(before.toLocalDate(),
@@ -246,7 +234,7 @@ class EarnPointCommandServiceTest extends AbstractIntegrationTest {
         void custom_expiry_days_applied() {
             LocalDateTime before = LocalDateTime.now();
             EarnPointResult result = earnService.earn(
-                new EarnPointCommand(USER_ID, 1000L, PointSource.SYSTEM, 30));
+                new EarnPointCommand(USER_ID, 1000L, 30));
 
             long minutesGap = ChronoUnit.MINUTES.between(before.plusDays(30), result.expiresAt());
             assertThat(minutesGap).isBetween(-1L, 1L);
@@ -256,7 +244,7 @@ class EarnPointCommandServiceTest extends AbstractIntegrationTest {
         @DisplayName("expiryDays 가 정책 최솟값(1) 이면 적립이 성공한다 (inclusive)")
         void min_days_inclusive_succeeds() {
             EarnPointResult result = earnService.earn(
-                new EarnPointCommand(USER_ID, 1000L, PointSource.SYSTEM, policy.expiryMinDays()));
+                new EarnPointCommand(USER_ID, 1000L, policy.expiryMinDays()));
             assertThat(result.expiresAt()).isAfter(LocalDateTime.now());
         }
 
@@ -264,7 +252,7 @@ class EarnPointCommandServiceTest extends AbstractIntegrationTest {
         @DisplayName("expiryDays 가 정책 최댓값-1(1824) 이면 적립이 성공한다 (exclusive 경계)")
         void max_days_exclusive_minus_one_succeeds() {
             EarnPointResult result = earnService.earn(
-                new EarnPointCommand(USER_ID, 1000L, PointSource.SYSTEM, policy.expiryMaxDays() - 1));
+                new EarnPointCommand(USER_ID, 1000L, policy.expiryMaxDays() - 1));
             assertThat(result.expiresAt()).isAfter(LocalDateTime.now());
         }
     }
@@ -277,7 +265,7 @@ class EarnPointCommandServiceTest extends AbstractIntegrationTest {
         @DisplayName("적립을 저장하면 audit 컬럼(createdAt/By, updatedAt/By) 이 자동으로 채워지고 deletedAt 은 NULL 이다")
         void audit_columns_populated_on_insert() {
             EarnPointResult result = earnService.earn(
-                new EarnPointCommand(USER_ID, 1000L, PointSource.SYSTEM, null));
+                new EarnPointCommand(USER_ID, 1000L, null));
 
             PointEarn saved = earnRepository.findById(result.earnId()).orElseThrow();
             assertThat(saved.getCreatedAt()).isNotNull();
@@ -292,7 +280,7 @@ class EarnPointCommandServiceTest extends AbstractIntegrationTest {
         @DisplayName("softDelete() 를 호출하면 deletedAt 이 채워지고 isDeleted() 가 true 를 반환한다")
         void soft_delete_sets_deleted_at() {
             EarnPointResult result = earnService.earn(
-                new EarnPointCommand(USER_ID, 1000L, PointSource.SYSTEM, null));
+                new EarnPointCommand(USER_ID, 1000L, null));
 
             PointEarn earn = earnRepository.findById(result.earnId()).orElseThrow();
             earn.softDelete();
@@ -304,8 +292,8 @@ class EarnPointCommandServiceTest extends AbstractIntegrationTest {
         @Test
         @DisplayName("soft-delete 된 적립은 sumActiveBalance 합산에서 제외된다 (@SQLRestriction 동작)")
         void soft_deleted_earn_excluded_from_sum() {
-            EarnPointResult r1 = earnService.earn(new EarnPointCommand(USER_ID, 1000L, PointSource.SYSTEM, null));
-            earnService.earn(new EarnPointCommand(USER_ID, 500L, PointSource.SYSTEM, null));
+            EarnPointResult r1 = earnService.earn(new EarnPointCommand(USER_ID, 1000L, null));
+            earnService.earn(new EarnPointCommand(USER_ID, 500L, null));
 
             PointEarn r1Entity = earnRepository.findById(r1.earnId()).orElseThrow();
             r1Entity.softDelete();

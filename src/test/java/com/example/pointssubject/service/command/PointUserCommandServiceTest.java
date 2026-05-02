@@ -4,8 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.example.pointssubject.domain.entity.PointUser;
-import com.example.pointssubject.domain.enums.PointSource;
-import com.example.pointssubject.exception.BalanceLimitExceededException;
+import com.example.pointssubject.exception.PointErrorCode;
+import com.example.pointssubject.exception.PointException;
 import com.example.pointssubject.policy.PointPolicyService;
 import com.example.pointssubject.repository.PointUserRepository;
 import com.example.pointssubject.service.command.dto.EarnPointCommand;
@@ -46,8 +46,7 @@ class PointUserCommandServiceTest extends AbstractIntegrationTest {
         @Test
         @DisplayName("기존 회원의 한도를 변경하면 DB 의 max_balance 가 새 값으로 갱신된다")
         void updates_existing_user_limit() {
-            // 적립으로 회원 row 자동 생성
-            earnService.earn(new EarnPointCommand(USER_ID, 1000L, PointSource.SYSTEM, null));
+            earnService.earn(new EarnPointCommand(USER_ID, 1000L, null));
             assertThat(userRepository.findById(USER_ID).orElseThrow().getMaxBalance()).isNull();
 
             pointUserService.updateMaxBalance(new UpdateUserMaxBalanceCommand(USER_ID, 2000L));
@@ -74,33 +73,29 @@ class PointUserCommandServiceTest extends AbstractIntegrationTest {
         @Test
         @DisplayName("기존 잔액보다 작게 한도를 낮추면 기존 잔액은 유지되고 이후 적립만 거부된다")
         void lowering_limit_blocks_future_earn_but_keeps_existing_balance() {
-            // 5,000 적립
-            earnService.earn(new EarnPointCommand(USER_ID, 5000L, PointSource.SYSTEM, null));
+            earnService.earn(new EarnPointCommand(USER_ID, 5000L, null));
 
-            // 한도를 3,000 으로 낮춤 (이미 5,000 보유 중 — 기존은 유지, 새 적립만 영향)
             pointUserService.updateMaxBalance(new UpdateUserMaxBalanceCommand(USER_ID, 3000L));
 
-            // 새 적립은 거부 (currentBalance=5000 + amount > 3000)
             assertThatThrownBy(() ->
-                earnService.earn(new EarnPointCommand(USER_ID, 1L, PointSource.SYSTEM, null)))
-                .isInstanceOf(BalanceLimitExceededException.class);
+                earnService.earn(new EarnPointCommand(USER_ID, 1L, null)))
+                .isInstanceOf(PointException.class)
+                .extracting("errorCode").isEqualTo(PointErrorCode.EARN_BALANCE_LIMIT_EXCEEDED);
         }
 
         @Test
         @DisplayName("override 를 해제하면 다음 적립부터 글로벌 default 한도가 즉시 적용된다")
         void resetting_override_falls_back_to_global_default() {
-            // 매우 작은 한도로 설정해 적립 차단
             pointUserService.updateMaxBalance(new UpdateUserMaxBalanceCommand(USER_ID, 100L));
-            earnService.earn(new EarnPointCommand(USER_ID, 100L, PointSource.SYSTEM, null));
+            earnService.earn(new EarnPointCommand(USER_ID, 100L, null));
             assertThatThrownBy(() ->
-                earnService.earn(new EarnPointCommand(USER_ID, 1L, PointSource.SYSTEM, null)))
-                .isInstanceOf(BalanceLimitExceededException.class);
+                earnService.earn(new EarnPointCommand(USER_ID, 1L, null)))
+                .isInstanceOf(PointException.class)
+                .extracting("errorCode").isEqualTo(PointErrorCode.EARN_BALANCE_LIMIT_EXCEEDED);
 
-            // override 해제 → 글로벌 default 적용 → 추가 적립 허용
             pointUserService.updateMaxBalance(new UpdateUserMaxBalanceCommand(USER_ID, null));
 
-            // 글로벌 default 한도 안에선 추가 적립 가능 (currentBalance=100 + 1 < globalDefault)
-            earnService.earn(new EarnPointCommand(USER_ID, 1L, PointSource.SYSTEM, null));
+            earnService.earn(new EarnPointCommand(USER_ID, 1L, null));
         }
     }
 
@@ -113,7 +108,7 @@ class PointUserCommandServiceTest extends AbstractIntegrationTest {
         void earn_creates_user_row_with_null_max_balance() {
             assertThat(userRepository.findById(USER_ID)).isEmpty();
 
-            earnService.earn(new EarnPointCommand(USER_ID, 1000L, PointSource.SYSTEM, null));
+            earnService.earn(new EarnPointCommand(USER_ID, 1000L, null));
 
             PointUser created = userRepository.findById(USER_ID).orElseThrow();
             assertThat(created.getMaxBalance()).isNull();

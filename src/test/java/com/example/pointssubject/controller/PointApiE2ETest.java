@@ -11,7 +11,6 @@ import com.example.pointssubject.controller.dto.EarnPointResponse;
 import com.example.pointssubject.controller.dto.UpdateUserMaxBalanceRequest;
 import com.example.pointssubject.domain.entity.PointEarn;
 import com.example.pointssubject.domain.enums.EarnStatus;
-import com.example.pointssubject.domain.enums.PointSource;
 import com.example.pointssubject.repository.PointEarnRepository;
 import com.example.pointssubject.repository.PointUserRepository;
 import com.example.pointssubject.support.AbstractIntegrationTest;
@@ -44,7 +43,7 @@ class PointApiE2ETest extends AbstractIntegrationTest {
         @Test
         @DisplayName("유효한 적립 요청을 보내면 201 Created 와 함께 earnId/userId/amount/source/expiresAt 이 응답되고 DB 에 ACTIVE row 가 생성된다")
         void earn_success() throws Exception {
-            EarnPointRequest request = new EarnPointRequest(USER_ID, 1000L, PointSource.SYSTEM, 30);
+            EarnPointRequest request = new EarnPointRequest(USER_ID, 1000L, 30);
 
             String responseBody = mockMvc.perform(post("/api/points/earn")
                     .contentType(MediaType.APPLICATION_JSON)
@@ -76,7 +75,7 @@ class PointApiE2ETest extends AbstractIntegrationTest {
         @Test
         @DisplayName("적립 후 곧바로 취소를 호출하면 200 OK 가 응답되고 DB 의 status/remaining/cancelledAt 이 일관되게 갱신된다")
         void cancel_success() throws Exception {
-            EarnPointRequest earnReq = new EarnPointRequest(USER_ID, 1000L, PointSource.SYSTEM, null);
+            EarnPointRequest earnReq = new EarnPointRequest(USER_ID, 1000L, null);
             String earnedBody = mockMvc.perform(post("/api/points/earn")
                     .contentType(MediaType.APPLICATION_JSON)
                     .content(objectMapper.writeValueAsString(earnReq)))

@@ -15,7 +15,9 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: create
+      # H2 in-memory + 단일 인스턴스 전제. JVM 종료 시 스키마까지 DROP 해 외부 DB 가 잘못 붙더라도
+      # 데이터를 두고 가지 않게 한다. 운영 전환 시 'validate' + Flyway/Liquibase 로 교체.
+      ddl-auto: create-drop
     show-sql: true
     properties:
       hibernate:
