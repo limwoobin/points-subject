@@ -18,6 +18,18 @@
 
 > Gradle 자체가 JVM 17+ 를 요구합니다. `JAVA_HOME` 이 JDK 11 을 가리키면 `./gradlew` 가 실행 자체에서 실패하니, JDK 17 또는 21 로 설정해 주시기 바랍니다.
 
+### 1.1 PRD 충족 현황
+
+| 항목 | 상태 | 비고 |
+| --- | --- | --- |
+| 기능 — 적립 / 적립취소 | ✅ | 구현 완료 |
+| 기능 — 사용 / 사용취소 | ⏳ | 미구현 (도메인 모델 · 분배 알고리즘 · 재발급 로직 작업 예정) |
+| ERD 이미지 (필수) | ❌ | **본 저장소에는 아직 포함되어 있지 않습니다.** 추후 별도로 첨부할 예정입니다 |
+| AWS 아키텍처 (옵션) | — | 본 과제 범위에 포함하지 않았습니다 |
+| README | ✅ | 본 문서 |
+
+> `src/main/resources/img.png` 는 FF4j Web Console 화면 캡처입니다. ERD 가 아닙니다 — README §3.1 에서만 참조합니다.
+
 ## 2. 빌드 및 실행
 
 ```bash
@@ -58,6 +70,10 @@
 [런타임]    PointPolicyService(facade)  →  ff4j.getProperty(key) 만 호출. 도메인 코드는 facade 만 의존합니다.
 [변경]      Web Console / REST  →  즉시 반영 (캐시 자동 무효화), FF4J_AUDIT 에 변경 이력 자동 기록
 ```
+
+FF4j Web Console 화면은 다음과 같습니다 — 운영자가 정책 값을 즉시 변경할 수 있고, 변경 이력은 `FF4J_AUDIT` 테이블에 자동으로 남습니다.
+
+![FF4j Web Console](src/main/resources/img.png)
 
 관리 대상 키는 7종입니다.
 
@@ -216,15 +232,17 @@ config/                      FF4j 빈, JPA Auditing
 
 ## 4. API 엔드포인트
 
-| Method | Path | 종류 | 설명 | 멱등 |
+| Method | Path | 종류 | 설명 | 상태 |
 | --- | --- | --- | --- | --- |
-| POST | `/api/points/earn` | Command | 포인트 적립 | — |
-| POST | `/api/points/earn/{earnId}/cancel` | Command | 적립 취소 | 자연 멱등 (`earnId` 1:0..1) |
-| POST | `/api/points/use` | Command | 포인트 사용 | **필수** — `order_number` 키 |
-| POST | `/api/points/use/{useId}/cancel` | Command | 사용 취소 (전체/부분) | **필수** — `cancellation_key` 키 |
-| GET | `/api/points/users/{userId}/balance` | Query | 잔액 조회 | — |
-| GET | `/api/points/users/{userId}/history` | Query | 거래 이력 조회 | — |
-| PUT | `/api/admin/users/{userId}/max-balance` | Admin | 회원별 보유 한도 override (NULL 전송 시 글로벌 default 회귀) | — |
+| POST | `/api/points/earn` | Command | 포인트 적립 | ✅ |
+| POST | `/api/points/earn/{earnId}/cancel` | Command | 적립 취소 | ✅ |
+| POST | `/api/points/use` | Command | 포인트 사용 (멱등 키: `order_number`) | ⏳ 미구현 |
+| POST | `/api/points/use/{useId}/cancel` | Command | 사용 취소 — 전체/부분 (멱등 키: `cancellation_key`) | ⏳ 미구현 |
+| GET | `/api/points/users/{userId}/balance` | Query | 잔액 조회 | ⏳ 미구현 |
+| GET | `/api/points/users/{userId}/history` | Query | 거래 이력 조회 | ⏳ 미구현 |
+| PUT | `/api/admin/users/{userId}/max-balance` | Admin | 회원별 보유 한도 override (NULL 전송 시 글로벌 default 회귀) | ✅ |
+
+> ⏳ 표시는 README 의 다른 섹션(§3.2, §3.4 등) 에 설계 의도가 기술되어 있지만 본 저장소 시점에서 코드 구현이 아직 완료되지 않은 항목입니다.
 
 > 본 과제에는 인증/인가가 도입되어 있지 않습니다. `/api/admin/*` 와 `/ff4j-console`, `/h2-console` 은 운영 배포 시 Spring Security 또는 reverse proxy 인증 게이트로 반드시 보호해 주셔야 합니다.
 
@@ -253,7 +271,7 @@ config/                      FF4j 빈, JPA Auditing
 │   │   ├── config/                     FF4j, JPA Auditing
 │   │   ├── controller/                 + GlobalExceptionHandler, dto/
 │   │   ├── service/command/            + dto/  (state-changing)
-│   │   ├── service/query/              + dto/  (read-only, scaffolded)
+│   │   ├── service/query/              + dto/  (read-only, 미구현 — 잔액/이력 조회 향후 추가 예정)
 │   │   ├── domain/entity/              BaseEntity + 엔티티
 │   │   ├── domain/enums/
 │   │   ├── repository/                 Spring Data
