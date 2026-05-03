@@ -7,7 +7,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.data.domain.AuditorAware;
 import org.springframework.data.jpa.repository.config.EnableJpaAuditing;
 
-/** 인증 도입 시 람다를 {@code SecurityContextHolder} 조회로 교체. */
+/** 인증 도입 시 람다 교체 필요. */
 @Configuration
 @EnableJpaAuditing
 public class JpaAuditingConfig {

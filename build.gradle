@@ -19,9 +19,13 @@ repositories {
 }
 
 dependencies {
+	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-web'
+
+	// PointEarn 변경 이력(@Audited) — 버전은 Spring Boot 3.5.x BOM(Hibernate 6.6)이 관리.
+	implementation 'org.hibernate.orm:hibernate-envers'
 
 	// FF4j 2.1 = Spring Boot 3.x / Jakarta 라인. starter 미제공이라 수동 빈 구성.
 	implementation 'org.ff4j:ff4j-core:2.1'

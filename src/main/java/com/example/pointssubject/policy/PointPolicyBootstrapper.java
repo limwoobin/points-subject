@@ -8,11 +8,7 @@ import org.ff4j.property.store.JdbcPropertyStore;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
-/**
- * 앱 기동 시 {@link PolicyKey} 항목을 yml/env 값으로 FF4j 에 시드.
- * 멱등 (이미 있으면 skip — 운영 콘솔에서 변경된 값이 재기동으로 회귀되지 않게).
- * 키 누락 시 {@code getRequiredProperty} 가 예외를 던져 부팅 실패 (silent fallback 금지).
- */
+/** 기동 시 yml seed → FF4j. 이미 있으면 skip (운영 콘솔 변경값을 재기동으로 회귀시키지 않음). */
 @Slf4j
 @Component
 @RequiredArgsConstructor

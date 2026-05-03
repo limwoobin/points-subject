@@ -33,6 +33,19 @@ spring:
     resources:
       add-mappings: false
 
+# Actuator — health 만 노출 (info / metrics 등은 운영 환경에서 필요 시 추가).
+# liveness / readiness probe 분리는 K8s 배포 시 활성화.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+
 # 도메인 정책 시드 값. 부팅 시 FF4j Property store 에 INSERT, 이후 런타임 SoT 는 FF4j (Web Console 로 변경).
 points:
   earn:

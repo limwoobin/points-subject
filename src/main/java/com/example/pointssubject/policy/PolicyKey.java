@@ -3,11 +3,7 @@ package com.example.pointssubject.policy;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 
-/**
- * FF4j Property store 에 등록되는 도메인 정책 키 목록.
- * 시드 default 값은 enum 이 아닌 yml/env 가 단일 소스 — drift 방지.
- * description 은 FF4j Web Console 운영자 화면에 노출된다.
- */
+/** seed default 는 yml 이 단일 소스 (drift 방지). description 은 FF4j Console 노출용. */
 @Getter
 @RequiredArgsConstructor
 public enum PolicyKey {

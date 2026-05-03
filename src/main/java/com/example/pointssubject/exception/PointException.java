@@ -2,10 +2,7 @@ package com.example.pointssubject.exception;
 
 import lombok.Getter;
 
-/**
- * 도메인 예외 단일 진입점. 새 도메인 에러는 {@link PointErrorCode} enum 한 줄 추가로 정의되며,
- * 별도 specific 예외 클래스는 만들지 않는다 (architecture.md §V).
- */
+/** 도메인 예외 단일 진입점 — specific 예외 클래스는 만들지 않고 PointErrorCode enum 으로 분기. */
 @Getter
 public class PointException extends RuntimeException {
 

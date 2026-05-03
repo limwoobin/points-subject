@@ -11,10 +11,7 @@ import org.springframework.data.annotation.LastModifiedBy;
 import org.springframework.data.annotation.LastModifiedDate;
 import org.springframework.data.jpa.domain.support.AuditingEntityListener;
 
-/**
- * 자식 엔티티는 클래스 단위 {@code @SQLDelete} + {@code @SQLRestriction} 으로 delete 를
- * deleted_at update 로 치환하고 모든 SELECT 에 {@code deleted_at IS NULL} 을 자동 적용한다.
- */
+/** 자식 엔티티는 @SQLDelete + @SQLRestriction 으로 hard-delete 를 deleted_at update 로 치환. */
 @Getter
 @MappedSuperclass
 @EntityListeners(AuditingEntityListener.class)
