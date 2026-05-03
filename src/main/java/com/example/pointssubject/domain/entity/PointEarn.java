@@ -45,7 +45,7 @@ public class PointEarn extends BaseEntity {
     @Column(name = "user_id", nullable = false)
     private Long userId;
 
-    @Column(name = "amount", nullable = false)
+    @Column(name = "initial_amount", nullable = false)
     private Long initialAmount;
 
     @Column(name = "remaining_amount", nullable = false)
