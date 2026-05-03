@@ -2,7 +2,7 @@ package com.example.pointssubject.service.command;
 
 import com.example.pointssubject.domain.entity.PointEarn;
 import com.example.pointssubject.domain.entity.PointUser;
-import com.example.pointssubject.domain.enums.PointSource;
+import com.example.pointssubject.domain.enums.EarnType;
 import com.example.pointssubject.exception.PointErrorCode;
 import com.example.pointssubject.exception.PointException;
 import com.example.pointssubject.policy.PointPolicyService;
@@ -17,14 +17,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * 적립/적립취소가 동일 aggregate({@code point_earn}) + 회원 락을 공유하므로 한 서비스에 묶음.
- * 동시성: 회원 row 비관 락으로 적립/사용/사용취소를 직렬화하고, 적립 row 의 {@code @Version}
- * 으로 락 획득 직전의 변경을 commit 시점에 잡아 롤백.
- * <p>
- * {@code source} 는 외부 입력이 아니라 진입점으로 결정된다 — {@link #earn(EarnPointCommand)} 는 SYSTEM,
- * {@link #earnManual(EarnPointCommand)} 는 MANUAL. 일반 사용자가 자기 적립을 수기 적립으로 둔갑시키는 시나리오를 차단.
- */
 @Service
 @RequiredArgsConstructor
 public class PointEarnCommandService {
@@ -32,20 +24,20 @@ public class PointEarnCommandService {
     private final PointEarnRepository earnRepository;
     private final PointUserRepository userRepository;
     private final PointPolicyService policy;
+    private final PointActionLogger actionLogger;
 
-    /** 일반(시스템) 적립. 클라이언트 호출 경로. */
     @Transactional
     public EarnPointResult earn(EarnPointCommand command) {
-        return doEarn(command, PointSource.SYSTEM);
+        return doEarn(command, EarnType.SYSTEM);
     }
 
-    /** 운영자 수기 적립. admin 엔드포인트 전용 — 외부 노출 시 인증 게이트 필수. */
+    /** admin 전용 — 외부 노출 시 인증 게이트 필수. */
     @Transactional
     public EarnPointResult earnManual(EarnPointCommand command) {
-        return doEarn(command, PointSource.MANUAL);
+        return doEarn(command, EarnType.MANUAL);
     }
 
-    private EarnPointResult doEarn(EarnPointCommand command, PointSource source) {
+    private EarnPointResult doEarn(EarnPointCommand command, EarnType type) {
         validateAmount(command.amount());
 
         int expiryDays = resolveExpiryDays(command.expiryDays());
@@ -64,24 +56,29 @@ public class PointEarnCommandService {
         PointEarn earn = PointEarn.earn(
             command.userId(),
             command.amount(),
-            source,
+            type,
             now.plusDays(expiryDays)
         );
+
         PointEarn saved = earnRepository.save(earn);
+        actionLogger.earn(saved.getUserId(), saved.getId(), saved.getInitialAmount());
         return EarnPointResult.from(saved);
     }
 
     @Transactional
     public CancelEarnResult cancelEarn(CancelEarnCommand command) {
         Long earnId = command.earnId();
+        Long userId = command.userId();
+
+        userRepository.findByUserIdForUpdate(userId)
+            .orElseThrow(() -> new PointException(PointErrorCode.EARN_NOT_FOUND, "earnId=" + earnId));
 
         PointEarn earn = earnRepository.findById(earnId)
             .orElseThrow(() -> new PointException(PointErrorCode.EARN_NOT_FOUND, "earnId=" + earnId));
 
-        userRepository.findByUserIdForUpdate(earn.getUserId())
-            .orElseThrow(() -> new IllegalStateException(
-                "user row missing for earnId=" + earnId + ", userId=" + earn.getUserId())
-            );
+        if (!earn.getUserId().equals(userId)) {
+            throw new PointException(PointErrorCode.EARN_NOT_FOUND, "earnId=" + earnId);
+        }
 
         if (!earn.isCancellable()) {
             throw new PointException(PointErrorCode.EARN_CANCEL_NOT_ALLOWED,
@@ -92,6 +89,7 @@ public class PointEarnCommandService {
         }
 
         earn.cancel(LocalDateTime.now());
+        actionLogger.earnCancel(earn.getUserId(), earn.getId(), earn.getInitialAmount());
         return CancelEarnResult.from(earn);
     }
 

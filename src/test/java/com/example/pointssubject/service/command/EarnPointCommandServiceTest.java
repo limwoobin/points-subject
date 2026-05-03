@@ -3,12 +3,10 @@ package com.example.pointssubject.service.command;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.example.pointssubject.domain.entity.BaseEntity;
 import com.example.pointssubject.domain.entity.PointEarn;
 import com.example.pointssubject.domain.entity.PointUser;
 import com.example.pointssubject.domain.enums.EarnStatus;
-import com.example.pointssubject.domain.enums.PointOrigin;
-import com.example.pointssubject.domain.enums.PointSource;
+import com.example.pointssubject.domain.enums.EarnType;
 import com.example.pointssubject.exception.PointErrorCode;
 import com.example.pointssubject.exception.PointException;
 import com.example.pointssubject.policy.PointPolicyService;
@@ -47,24 +45,14 @@ class EarnPointCommandServiceTest extends AbstractIntegrationTest {
             assertThat(result.earnId()).isNotNull();
             assertThat(result.userId()).isEqualTo(USER_ID);
             assertThat(result.amount()).isEqualTo(1000L);
-            assertThat(result.source()).isEqualTo(PointSource.SYSTEM);
+            assertThat(result.type()).isEqualTo(EarnType.SYSTEM);
 
             PointEarn saved = earnRepository.findById(result.earnId()).orElseThrow();
             assertThat(saved.getInitialAmount()).isEqualTo(1000L);
             assertThat(saved.getRemainingAmount()).isEqualTo(1000L);
             assertThat(saved.getStatus()).isEqualTo(EarnStatus.ACTIVE);
-            assertThat(saved.getOrigin()).isEqualTo(PointOrigin.NORMAL);
+            assertThat(saved.getType()).isEqualTo(EarnType.SYSTEM);
             assertThat(saved.getCancelledAt()).isNull();
-        }
-
-        @Test
-        @DisplayName("회원이 처음 거래할 때 적립을 호출하면 point_user row 가 자동 upsert 된다")
-        void earn_upserts_point_user_for_first_time_user() {
-            assertThat(userRepository.findById(USER_ID)).isEmpty();
-
-            earnService.earn(new EarnPointCommand(USER_ID, 1000L, null));
-
-            assertThat(userRepository.findById(USER_ID)).isPresent();
         }
     }
 
@@ -155,7 +143,7 @@ class EarnPointCommandServiceTest extends AbstractIntegrationTest {
                 .isInstanceOf(PointException.class)
                 .extracting("errorCode").isEqualTo(PointErrorCode.EARN_BALANCE_LIMIT_EXCEEDED);
 
-            earnService.cancelEarn(new CancelEarnCommand(e1.earnId()));
+            earnService.cancelEarn(new CancelEarnCommand(USER_ID, e1.earnId()));
 
             EarnPointResult re = earnService.earn(
                 new EarnPointCommand(USER_ID, override, null));
@@ -182,32 +170,8 @@ class EarnPointCommandServiceTest extends AbstractIntegrationTest {
         }
     }
 
-    @Nested
-    @DisplayName("source 식별 — 일반(SYSTEM) vs 수기(MANUAL)")
-    class SourceIdentification {
-
-        @Test
-        @DisplayName("earn(...) 으로 적립하면 PointEarn 의 source 가 SYSTEM 으로 저장된다")
-        void earn_persists_with_system_source() {
-            EarnPointResult result = earnService.earn(
-                new EarnPointCommand(USER_ID, 1000L, null));
-
-            PointEarn saved = earnRepository.findById(result.earnId()).orElseThrow();
-            assertThat(saved.getSource()).isEqualTo(PointSource.SYSTEM);
-            assertThat(result.source()).isEqualTo(PointSource.SYSTEM);
-        }
-
-        @Test
-        @DisplayName("earnManual(...) 으로 적립하면 PointEarn 의 source 가 MANUAL 로 저장된다")
-        void earn_manual_persists_with_manual_source() {
-            EarnPointResult result = earnService.earnManual(
-                new EarnPointCommand(USER_ID, 1000L, null));
-
-            PointEarn saved = earnRepository.findById(result.earnId()).orElseThrow();
-            assertThat(saved.getSource()).isEqualTo(PointSource.MANUAL);
-            assertThat(result.source()).isEqualTo(PointSource.MANUAL);
-        }
-    }
+    // SYSTEM/MANUAL source 식별 happy path 는 EarnAcceptanceTest 가 HTTP layer 에서 검증.
+    // earnManual 진입점의 도메인 보장은 PointEarnCommandServiceUnitTest.earn_manual_persists_with_manual_source 단위 테스트.
 
     @Nested
     @DisplayName("만료일 부여 (1일 이상 ~ 5년 미만)")
@@ -261,20 +225,8 @@ class EarnPointCommandServiceTest extends AbstractIntegrationTest {
     @DisplayName("audit 컬럼 + soft-delete")
     class AuditAndSoftDelete {
 
-        @Test
-        @DisplayName("적립을 저장하면 audit 컬럼(createdAt/By, updatedAt/By) 이 자동으로 채워지고 deletedAt 은 NULL 이다")
-        void audit_columns_populated_on_insert() {
-            EarnPointResult result = earnService.earn(
-                new EarnPointCommand(USER_ID, 1000L, null));
-
-            PointEarn saved = earnRepository.findById(result.earnId()).orElseThrow();
-            assertThat(saved.getCreatedAt()).isNotNull();
-            assertThat(saved.getCreatedBy()).isEqualTo(BaseEntity.SYSTEM_AUDITOR);
-            assertThat(saved.getUpdatedAt()).isNotNull();
-            assertThat(saved.getUpdatedBy()).isEqualTo(BaseEntity.SYSTEM_AUDITOR);
-            assertThat(saved.getDeletedAt()).isNull();
-            assertThat(saved.isDeleted()).isFalse();
-        }
+        // audit 자동 채움은 PointEarnRepositoryTest.HibernateAnnotations.audit_columns_populated_on_save 에서 (DataJpaTest, 더 가벼움) 검증.
+        // soft-delete 가 sumActiveBalance 에서 제외되는 것은 PointEarnRepositoryTest.SumActiveBalance.excludes_soft_deleted_earn 에서 검증.
 
         @Test
         @DisplayName("softDelete() 를 호출하면 deletedAt 이 채워지고 isDeleted() 가 true 를 반환한다")
@@ -288,23 +240,9 @@ class EarnPointCommandServiceTest extends AbstractIntegrationTest {
             assertThat(earn.getDeletedAt()).isNotNull();
             assertThat(earn.isDeleted()).isTrue();
         }
-
-        @Test
-        @DisplayName("soft-delete 된 적립은 sumActiveBalance 합산에서 제외된다 (@SQLRestriction 동작)")
-        void soft_deleted_earn_excluded_from_sum() {
-            EarnPointResult r1 = earnService.earn(new EarnPointCommand(USER_ID, 1000L, null));
-            earnService.earn(new EarnPointCommand(USER_ID, 500L, null));
-
-            PointEarn r1Entity = earnRepository.findById(r1.earnId()).orElseThrow();
-            r1Entity.softDelete();
-            earnRepository.saveAndFlush(r1Entity);
-
-            long sum = earnRepository.sumActiveBalance(USER_ID, LocalDateTime.now());
-            assertThat(sum).isEqualTo(500L);
-        }
     }
 
-    /** maxBalance 가 NULL 이 아닌 PointUser 생성을 위한 reflection 헬퍼 (production factory 는 null 만 지원). */
+    /** maxBalance 가 non-null 인 PointUser 생성용 — production factory 는 null 만 허용. */
     private static class PointUserTestFactory {
         private final Long userId;
         private final Long maxBalance;

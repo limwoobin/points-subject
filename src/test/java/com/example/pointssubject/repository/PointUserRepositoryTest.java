@@ -68,7 +68,7 @@ class PointUserRepositoryTest {
             PointUser saved = userRepository.saveAndFlush(PointUser.create(USER_ID));
             em.clear();
 
-            PointUser refreshed = userRepository.findById(USER_ID).orElseThrow();
+            PointUser refreshed = userRepository.findByUserId(USER_ID).orElseThrow();
             assertThat(refreshed.getCreatedAt()).isNotNull();
             assertThat(refreshed.getCreatedBy()).isEqualTo("SYSTEM");
             assertThat(refreshed.getUpdatedAt()).isNotNull();
@@ -79,20 +79,19 @@ class PointUserRepositoryTest {
         @Test
         @DisplayName("updateMaxBalance 호출 후 flush 하면 updatedAt 이 갱신되고 max_balance 컬럼이 새 값으로 반영된다")
         void update_changes_updated_at() {
-            PointUser saved = userRepository.saveAndFlush(PointUser.create(USER_ID));
+            userRepository.saveAndFlush(PointUser.create(USER_ID));
             em.flush();
             em.clear();
-            PointUser fetched = userRepository.findById(USER_ID).orElseThrow();
+            PointUser fetched = userRepository.findByUserId(USER_ID).orElseThrow();
             var updatedBefore = fetched.getUpdatedAt();
 
             fetched.updateMaxBalance(5000L);
             em.flush();
             em.clear();
 
-            PointUser afterUpdate = userRepository.findById(USER_ID).orElseThrow();
+            PointUser afterUpdate = userRepository.findByUserId(USER_ID).orElseThrow();
             assertThat(afterUpdate.getMaxBalance()).isEqualTo(5000L);
             assertThat(afterUpdate.getUpdatedAt()).isAfterOrEqualTo(updatedBefore);
-            assertThat(saved.getUserId()).isEqualTo(USER_ID);
         }
 
         @Test
@@ -103,7 +102,7 @@ class PointUserRepositoryTest {
             em.flush();
             em.clear();
 
-            assertThat(userRepository.findById(USER_ID)).isEmpty();
+            assertThat(userRepository.findByUserId(USER_ID)).isEmpty();
         }
     }
 }

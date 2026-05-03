@@ -10,6 +10,8 @@ import org.springframework.data.repository.query.Param;
 
 public interface PointUserRepository extends JpaRepository<PointUser, Long> {
 
+    Optional<PointUser> findByUserId(Long userId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("SELECT u FROM PointUser u WHERE u.userId = :userId")
     Optional<PointUser> findByUserIdForUpdate(@Param("userId") Long userId);

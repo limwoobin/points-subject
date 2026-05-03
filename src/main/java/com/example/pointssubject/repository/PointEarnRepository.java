@@ -25,15 +25,7 @@ public interface PointEarnRepository extends JpaRepository<PointEarn, Long> {
         return sumActiveBalance(userId, EarnStatus.ACTIVE, now);
     }
 
-    /**
-     * 사용 후보 적립 조회 — PRD §3.3.3 의 우선순위:
-     * <ol>
-     *   <li>수기(MANUAL) 우선</li>
-     *   <li>만료 임박 (expires_at ASC)</li>
-     *   <li>적립일 빠른 순 (created_at ASC)</li>
-     *   <li>id ASC (결정성 보장)</li>
-     * </ol>
-     */
+    /** 필터만 SQL — 우선순위 정렬은 호출자가 PointEarn.USE_PRIORITY 로 application 레이어에서 수행. */
     @Query("""
         SELECT e
         FROM PointEarn e
@@ -41,12 +33,10 @@ public interface PointEarnRepository extends JpaRepository<PointEarn, Long> {
           AND e.status = com.example.pointssubject.domain.enums.EarnStatus.ACTIVE
           AND e.remainingAmount > 0
           AND e.expiresAt > :now
-        ORDER BY
-          CASE WHEN e.source = com.example.pointssubject.domain.enums.PointSource.MANUAL THEN 0 ELSE 1 END,
-          e.expiresAt ASC,
-          e.createdAt ASC,
-          e.id ASC
         """)
     List<PointEarn> findActiveCandidatesForUse(@Param("userId") Long userId,
                                                @Param("now") LocalDateTime now);
+
+    /** 한 사용취소 트랜잭션이 발행한 USE_CANCEL_REISSUE 적립 — 만료된 분배분에 대한 신규 적립 추적용. */
+    List<PointEarn> findByOriginUseCancelId(Long originUseCancelId);
 }

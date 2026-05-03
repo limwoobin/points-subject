@@ -1,14 +1,14 @@
 package com.example.pointssubject.service.command.dto;
 
 import com.example.pointssubject.domain.entity.PointEarn;
-import com.example.pointssubject.domain.enums.PointSource;
+import com.example.pointssubject.domain.enums.EarnType;
 import java.time.LocalDateTime;
 
 public record EarnPointResult(
     Long earnId,
     Long userId,
     Long amount,
-    PointSource source,
+    EarnType type,
     LocalDateTime expiresAt
 ) {
 
@@ -17,7 +17,7 @@ public record EarnPointResult(
             earn.getId(),
             earn.getUserId(),
             earn.getInitialAmount(),
-            earn.getSource(),
+            earn.getType(),
             earn.getExpiresAt()
         );
     }

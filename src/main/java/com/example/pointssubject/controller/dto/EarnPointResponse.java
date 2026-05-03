@@ -1,6 +1,6 @@
 package com.example.pointssubject.controller.dto;
 
-import com.example.pointssubject.domain.enums.PointSource;
+import com.example.pointssubject.domain.enums.EarnType;
 import com.example.pointssubject.service.command.dto.EarnPointResult;
 import java.time.LocalDateTime;
 
@@ -8,7 +8,7 @@ public record EarnPointResponse(
     Long earnId,
     Long userId,
     Long amount,
-    PointSource source,
+    EarnType type,
     LocalDateTime expiresAt
 ) {
 
@@ -17,7 +17,7 @@ public record EarnPointResponse(
             result.earnId(),
             result.userId(),
             result.amount(),
-            result.source(),
+            result.type(),
             result.expiresAt()
         );
     }

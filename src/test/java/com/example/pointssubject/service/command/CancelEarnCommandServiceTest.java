@@ -38,7 +38,7 @@ class CancelEarnCommandServiceTest extends AbstractIntegrationTest {
             EarnPointResult earned = earnService.earn(
                 new EarnPointCommand(USER_ID, 1000L, null));
 
-            CancelEarnResult result = earnService.cancelEarn(new CancelEarnCommand(earned.earnId()));
+            CancelEarnResult result = earnService.cancelEarn(new CancelEarnCommand(USER_ID, earned.earnId()));
 
             assertThat(result.earnId()).isEqualTo(earned.earnId());
             assertThat(result.status()).isEqualTo(EarnStatus.CANCELLED);
@@ -62,7 +62,7 @@ class CancelEarnCommandServiceTest extends AbstractIntegrationTest {
             assertThat(earnRepository.sumActiveBalance(USER_ID, LocalDateTime.now()))
                 .isEqualTo(1500L);
 
-            earnService.cancelEarn(new CancelEarnCommand(e1.earnId()));
+            earnService.cancelEarn(new CancelEarnCommand(USER_ID, e1.earnId()));
 
             assertThat(earnRepository.sumActiveBalance(USER_ID, LocalDateTime.now()))
                 .isEqualTo(500L);
@@ -74,7 +74,7 @@ class CancelEarnCommandServiceTest extends AbstractIntegrationTest {
             EarnPointResult earned = earnService.earn(
                 new EarnPointCommand(USER_ID, 1000L, null));
 
-            CancelEarnResult result = earnService.cancelEarn(new CancelEarnCommand(earned.earnId()));
+            CancelEarnResult result = earnService.cancelEarn(new CancelEarnCommand(USER_ID, earned.earnId()));
 
             assertThat(result.earnId()).isEqualTo(earned.earnId());
         }
@@ -93,7 +93,7 @@ class CancelEarnCommandServiceTest extends AbstractIntegrationTest {
                 .executeUpdate();
             entityManager.clear();
 
-            CancelEarnResult result = earnService.cancelEarn(new CancelEarnCommand(earned.earnId()));
+            CancelEarnResult result = earnService.cancelEarn(new CancelEarnCommand(USER_ID, earned.earnId()));
             assertThat(result.status()).isEqualTo(EarnStatus.CANCELLED);
         }
     }
@@ -113,7 +113,7 @@ class CancelEarnCommandServiceTest extends AbstractIntegrationTest {
             PointEarn beforeCancel = earnRepository.findById(earned.earnId()).orElseThrow();
             LocalDateTime updatedBefore = beforeCancel.getUpdatedAt();
 
-            earnService.cancelEarn(new CancelEarnCommand(earned.earnId()));
+            earnService.cancelEarn(new CancelEarnCommand(USER_ID, earned.earnId()));
 
             entityManager.flush();
             entityManager.clear();

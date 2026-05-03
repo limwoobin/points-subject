@@ -14,7 +14,7 @@ import static org.mockito.Mockito.when;
 import com.example.pointssubject.domain.entity.PointEarn;
 import com.example.pointssubject.domain.entity.PointUser;
 import com.example.pointssubject.domain.enums.EarnStatus;
-import com.example.pointssubject.domain.enums.PointSource;
+import com.example.pointssubject.domain.enums.EarnType;
 import com.example.pointssubject.exception.PointErrorCode;
 import com.example.pointssubject.exception.PointException;
 import com.example.pointssubject.policy.PointPolicyService;
@@ -39,9 +39,10 @@ class PointEarnCommandServiceUnitTest {
     private final PointEarnRepository earnRepository = mock(PointEarnRepository.class);
     private final PointUserRepository userRepository = mock(PointUserRepository.class);
     private final PointPolicyService policy = mock(PointPolicyService.class);
+    private final PointActionLogger actionLogger = mock(PointActionLogger.class);
 
     private final PointEarnCommandService service =
-        new PointEarnCommandService(earnRepository, userRepository, policy);
+        new PointEarnCommandService(earnRepository, userRepository, policy, actionLogger);
 
     @BeforeEach
     void setupDefaultPolicy() {
@@ -72,7 +73,7 @@ class PointEarnCommandServiceUnitTest {
 
             assertThat(result.userId()).isEqualTo(USER_ID);
             assertThat(result.amount()).isEqualTo(1000L);
-            assertThat(result.source()).isEqualTo(PointSource.SYSTEM);
+            assertThat(result.type()).isEqualTo(EarnType.SYSTEM);
 
             ArgumentCaptor<PointEarn> captor = ArgumentCaptor.forClass(PointEarn.class);
             verify(earnRepository).save(captor.capture());
@@ -96,7 +97,7 @@ class PointEarnCommandServiceUnitTest {
 
             ArgumentCaptor<PointEarn> captor = ArgumentCaptor.forClass(PointEarn.class);
             verify(earnRepository).save(captor.capture());
-            assertThat(captor.getValue().getSource()).isEqualTo(PointSource.MANUAL);
+            assertThat(captor.getValue().getType()).isEqualTo(EarnType.MANUAL);
         }
     }
 
@@ -202,11 +203,11 @@ class PointEarnCommandServiceUnitTest {
             PointEarn earn = mock(PointEarn.class);
             given(earn.getUserId()).willReturn(USER_ID);
             given(earn.isCancellable()).willReturn(true);
-            given(earnRepository.findById(EARN_ID)).willReturn(Optional.of(earn));
             given(userRepository.findByUserIdForUpdate(USER_ID))
                 .willReturn(Optional.of(mock(PointUser.class)));
+            given(earnRepository.findById(EARN_ID)).willReturn(Optional.of(earn));
 
-            service.cancelEarn(new CancelEarnCommand(EARN_ID));
+            service.cancelEarn(new CancelEarnCommand(USER_ID, EARN_ID));
 
             verify(earn).cancel(any(LocalDateTime.class));
         }
@@ -217,27 +218,42 @@ class PointEarnCommandServiceUnitTest {
     class CancelEarnFailure {
 
         @Test
-        @DisplayName("존재하지 않는 earnId 로 취소를 시도하면 EARN_NOT_FOUND 를 던지고 회원 락도 시도하지 않는다")
+        @DisplayName("존재하지 않는 earnId 로 취소를 시도하면 EARN_NOT_FOUND 를 던진다")
         void throws_when_earn_id_does_not_exist() {
+            given(userRepository.findByUserIdForUpdate(USER_ID))
+                .willReturn(Optional.of(mock(PointUser.class)));
             given(earnRepository.findById(EARN_ID)).willReturn(Optional.empty());
 
-            assertThatThrownBy(() -> service.cancelEarn(new CancelEarnCommand(EARN_ID)))
+            assertThatThrownBy(() -> service.cancelEarn(new CancelEarnCommand(USER_ID, EARN_ID)))
                 .isInstanceOf(PointException.class)
                 .extracting("errorCode").isEqualTo(PointErrorCode.EARN_NOT_FOUND);
-
-            verify(userRepository, never()).findByUserIdForUpdate(anyLong());
         }
 
         @Test
-        @DisplayName("적립 row 는 있는데 회원 row 가 없는 정합성 깨짐 상태에서는 IllegalStateException 을 던지고 cancel 을 호출하지 않는다")
-        void throws_when_user_row_is_missing_for_existing_earn() {
-            PointEarn earn = mock(PointEarn.class);
-            given(earn.getUserId()).willReturn(USER_ID);
-            given(earnRepository.findById(EARN_ID)).willReturn(Optional.of(earn));
+        @DisplayName("회원 row 가 없으면 EARN_NOT_FOUND — 존재 자체를 노출하지 않고 적립 조회로 진행하지 않는다")
+        void throws_earn_not_found_when_user_row_is_missing() {
             given(userRepository.findByUserIdForUpdate(USER_ID)).willReturn(Optional.empty());
 
-            assertThatThrownBy(() -> service.cancelEarn(new CancelEarnCommand(EARN_ID)))
-                .isInstanceOf(IllegalStateException.class);
+            assertThatThrownBy(() -> service.cancelEarn(new CancelEarnCommand(USER_ID, EARN_ID)))
+                .isInstanceOf(PointException.class)
+                .extracting("errorCode").isEqualTo(PointErrorCode.EARN_NOT_FOUND);
+
+            verify(earnRepository, never()).findById(anyLong());
+        }
+
+        @Test
+        @DisplayName("다른 회원의 적립을 취소 시도하면 EARN_NOT_FOUND 로 차단되고 cancel 을 호출하지 않는다")
+        void throws_earn_not_found_when_caller_is_not_owner() {
+            Long otherUserId = 999L;
+            PointEarn earn = mock(PointEarn.class);
+            given(earn.getUserId()).willReturn(otherUserId);
+            given(userRepository.findByUserIdForUpdate(USER_ID))
+                .willReturn(Optional.of(mock(PointUser.class)));
+            given(earnRepository.findById(EARN_ID)).willReturn(Optional.of(earn));
+
+            assertThatThrownBy(() -> service.cancelEarn(new CancelEarnCommand(USER_ID, EARN_ID)))
+                .isInstanceOf(PointException.class)
+                .extracting("errorCode").isEqualTo(PointErrorCode.EARN_NOT_FOUND);
 
             verify(earn, never()).cancel(any());
         }
@@ -251,11 +267,11 @@ class PointEarnCommandServiceUnitTest {
             given(earn.getStatus()).willReturn(EarnStatus.CANCELLED);
             given(earn.getRemainingAmount()).willReturn(0L);
             given(earn.getInitialAmount()).willReturn(1000L);
-            given(earnRepository.findById(EARN_ID)).willReturn(Optional.of(earn));
             given(userRepository.findByUserIdForUpdate(USER_ID))
                 .willReturn(Optional.of(mock(PointUser.class)));
+            given(earnRepository.findById(EARN_ID)).willReturn(Optional.of(earn));
 
-            assertThatThrownBy(() -> service.cancelEarn(new CancelEarnCommand(EARN_ID)))
+            assertThatThrownBy(() -> service.cancelEarn(new CancelEarnCommand(USER_ID, EARN_ID)))
                 .isInstanceOf(PointException.class)
                 .extracting("errorCode").isEqualTo(PointErrorCode.EARN_CANCEL_NOT_ALLOWED);
 

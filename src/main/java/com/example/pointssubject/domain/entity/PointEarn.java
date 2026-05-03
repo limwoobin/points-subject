@@ -1,8 +1,7 @@
 package com.example.pointssubject.domain.entity;
 
 import com.example.pointssubject.domain.enums.EarnStatus;
-import com.example.pointssubject.domain.enums.PointOrigin;
-import com.example.pointssubject.domain.enums.PointSource;
+import com.example.pointssubject.domain.enums.EarnType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -12,13 +11,15 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
-import jakarta.persistence.Version;
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.SQLDelete;
 import org.hibernate.annotations.SQLRestriction;
+import org.hibernate.envers.AuditOverride;
+import org.hibernate.envers.Audited;
 
 @Entity
 @Table(
@@ -30,6 +31,8 @@ import org.hibernate.annotations.SQLRestriction;
 )
 @SQLDelete(sql = "UPDATE point_earn SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?")
 @SQLRestriction("deleted_at IS NULL")
+@Audited
+@AuditOverride(forClass = BaseEntity.class)
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class PointEarn extends BaseEntity {
@@ -49,12 +52,8 @@ public class PointEarn extends BaseEntity {
     private Long remainingAmount;
 
     @Enumerated(EnumType.STRING)
-    @Column(name = "source", length = 16, nullable = false)
-    private PointSource source;
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "origin", length = 32, nullable = false)
-    private PointOrigin origin;
+    @Column(name = "type", length = 16, nullable = false)
+    private EarnType type;
 
     @Column(name = "origin_use_cancel_id")
     private Long originUseCancelId;
@@ -69,21 +68,22 @@ public class PointEarn extends BaseEntity {
     @Column(name = "cancelled_at")
     private LocalDateTime cancelledAt;
 
-    @Version
-    @Column(name = "version", nullable = false)
-    private Long version;
+    /** 우선순위: MANUAL → 만료 임박 → 적립일 → id (createdAt 동률 tiebreak). */
+    public static final Comparator<PointEarn> USE_PRIORITY = Comparator
+            .comparingInt((PointEarn e) -> e.getType() == EarnType.MANUAL ? 0 : 1)
+            .thenComparing(PointEarn::getExpiresAt, Comparator.nullsLast(Comparator.naturalOrder()))
+            .thenComparing(PointEarn::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder()))
+            .thenComparing(PointEarn::getId, Comparator.nullsLast(Comparator.naturalOrder()));
 
     private PointEarn(Long userId,
                       Long initialAmount,
-                      PointSource source,
-                      PointOrigin origin,
+                      EarnType type,
                       Long originUseCancelId,
                       LocalDateTime expiresAt) {
         this.userId = userId;
         this.initialAmount = initialAmount;
         this.remainingAmount = initialAmount;
-        this.source = source;
-        this.origin = origin;
+        this.type = type;
         this.originUseCancelId = originUseCancelId;
         this.expiresAt = expiresAt;
         this.status = EarnStatus.ACTIVE;
@@ -91,35 +91,26 @@ public class PointEarn extends BaseEntity {
 
     public static PointEarn earn(Long userId,
                                  Long initialAmount,
-                                 PointSource source,
+                                 EarnType type,
                                  LocalDateTime expiresAt) {
-        return new PointEarn(userId, initialAmount, source, PointOrigin.NORMAL, null, expiresAt);
+        return new PointEarn(userId, initialAmount, type, null, expiresAt);
     }
 
     public static PointEarn reissueFromUseCancel(Long userId,
                                                  Long initialAmount,
                                                  Long originUseCancelId,
                                                  LocalDateTime expiresAt) {
-        return new PointEarn(userId, initialAmount, PointSource.SYSTEM, PointOrigin.USE_CANCEL_REISSUE,
-            originUseCancelId, expiresAt);
+        return new PointEarn(userId, initialAmount, EarnType.USE_CANCEL_REISSUE, originUseCancelId, expiresAt);
     }
 
     public boolean isCancellable() {
         return status == EarnStatus.ACTIVE && remainingAmount.equals(initialAmount);
     }
 
-    public boolean isUsable(LocalDateTime now) {
-        return status == EarnStatus.ACTIVE && remainingAmount > 0 && now.isBefore(expiresAt);
+    public boolean isAlive(LocalDateTime now) {
+        return status == EarnStatus.ACTIVE && now.isBefore(expiresAt);
     }
 
-    public boolean isExpired(LocalDateTime now) {
-        return !now.isBefore(expiresAt);
-    }
-
-    /**
-     * 본 적립건에서 {@code amount} 만큼 사용 차감.
-     * 호출 전 {@link #isUsable(LocalDateTime)} 와 잔여액 충분 여부를 service 단에서 선검증해야 한다.
-     */
     public void useFrom(long amount) {
         if (amount <= 0 || amount > remainingAmount || status != EarnStatus.ACTIVE) {
             throw new IllegalStateException(
@@ -128,10 +119,30 @@ public class PointEarn extends BaseEntity {
                     + ", remaining=" + remainingAmount
                     + ", requested=" + amount);
         }
+
         this.remainingAmount -= amount;
     }
 
-    /** 호출 전 {@link #isCancellable()} 선검증 필수. 본 메소드는 invariant 의 마지막 안전망. */
+    public void restoreFromUseCancel(long amount) {
+        if (amount <= 0 || status != EarnStatus.ACTIVE) {
+            throw new IllegalStateException(
+                "PointEarn cannot restore: id=" + id
+                    + ", status=" + status
+                    + ", requested=" + amount);
+        }
+
+        long after = remainingAmount + amount;
+        if (after > initialAmount) {
+            throw new IllegalStateException(
+                "PointEarn restore overflow: id=" + id
+                    + ", remaining=" + remainingAmount
+                    + ", initial=" + initialAmount
+                    + ", requested=" + amount);
+        }
+
+        this.remainingAmount = after;
+    }
+
     public void cancel(LocalDateTime now) {
         if (!isCancellable()) {
             throw new IllegalStateException(

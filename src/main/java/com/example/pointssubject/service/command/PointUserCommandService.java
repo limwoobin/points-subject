@@ -8,10 +8,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/**
- * 회원 단위 변경 (현재: 보유 한도 갱신).
- * 적립과 동일한 비관 락을 거쳐 갱신 — 직후 적립 검증이 즉시 새 한도를 본다.
- */
 @Service
 @RequiredArgsConstructor
 public class PointUserCommandService {
