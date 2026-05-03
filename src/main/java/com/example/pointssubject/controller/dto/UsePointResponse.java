@@ -1,6 +1,6 @@
 package com.example.pointssubject.controller.dto;
 
-import com.example.pointssubject.service.command.dto.UseAllocation;
+import com.example.pointssubject.domain.UseAllocation;
 import com.example.pointssubject.service.command.dto.UsePointResult;
 import java.time.LocalDateTime;
 import java.util.List;

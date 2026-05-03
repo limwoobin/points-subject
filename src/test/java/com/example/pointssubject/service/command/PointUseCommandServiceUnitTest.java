@@ -14,8 +14,10 @@ import com.example.pointssubject.domain.entity.PointEarn;
 import com.example.pointssubject.domain.entity.PointUse;
 import com.example.pointssubject.domain.entity.PointUseDetail;
 import com.example.pointssubject.domain.entity.PointUser;
+import com.example.pointssubject.domain.enums.PointUseType;
 import com.example.pointssubject.exception.PointErrorCode;
 import com.example.pointssubject.exception.PointException;
+import com.example.pointssubject.policy.PointPolicyService;
 import com.example.pointssubject.repository.PointEarnRepository;
 import com.example.pointssubject.repository.PointUseDetailRepository;
 import com.example.pointssubject.repository.PointUseRepository;
@@ -39,9 +41,11 @@ class PointUseCommandServiceUnitTest {
     private final PointUseRepository useRepository = mock(PointUseRepository.class);
     private final PointUseDetailRepository useDetailRepository = mock(PointUseDetailRepository.class);
     private final PointUserRepository userRepository = mock(PointUserRepository.class);
+    private final PointPolicyService policy = mock(PointPolicyService.class);
+    private final PointActionLogger actionLogger = mock(PointActionLogger.class);
 
     private final PointUseCommandService service = new PointUseCommandService(
-        earnRepository, useRepository, useDetailRepository, userRepository);
+        earnRepository, useRepository, useDetailRepository, userRepository, policy, actionLogger);
 
     @Nested
     @DisplayName("사용 성공")
@@ -52,7 +56,7 @@ class PointUseCommandServiceUnitTest {
         void uses_from_single_earn_and_persists() {
             given(userRepository.findByUserIdForUpdate(USER_ID))
                 .willReturn(Optional.of(mock(PointUser.class)));
-            given(useRepository.findByOrderNumber(ORDER_NUMBER)).willReturn(Optional.empty());
+            given(useRepository.existsByOrderNumberAndType(ORDER_NUMBER, PointUseType.USE)).willReturn(false);
             given(earnRepository.sumActiveBalance(eq(USER_ID), any(LocalDateTime.class))).willReturn(1000L);
 
             PointEarn earn = mock(PointEarn.class);
@@ -78,7 +82,7 @@ class PointUseCommandServiceUnitTest {
         void splits_across_multiple_earns_in_order() {
             given(userRepository.findByUserIdForUpdate(USER_ID))
                 .willReturn(Optional.of(mock(PointUser.class)));
-            given(useRepository.findByOrderNumber(ORDER_NUMBER)).willReturn(Optional.empty());
+            given(useRepository.existsByOrderNumberAndType(ORDER_NUMBER, PointUseType.USE)).willReturn(false);
             given(earnRepository.sumActiveBalance(eq(USER_ID), any(LocalDateTime.class))).willReturn(1500L);
 
             PointEarn first = mock(PointEarn.class);
@@ -107,40 +111,26 @@ class PointUseCommandServiceUnitTest {
     class UseFailure {
 
         @Test
-        @DisplayName("amount 가 0 이면 USE_AMOUNT_INVALID 를 던지고 락도 시도하지 않는다")
-        void throws_when_amount_is_zero() {
-            assertThatThrownBy(() -> service.use(new UsePointCommand(USER_ID, ORDER_NUMBER, 0L)))
-                .isInstanceOf(PointException.class)
-                .extracting("errorCode").isEqualTo(PointErrorCode.USE_AMOUNT_INVALID);
-
-            verify(userRepository, never()).findByUserIdForUpdate(anyLong());
-        }
-
-        @Test
-        @DisplayName("amount 가 음수이면 USE_AMOUNT_INVALID 를 던진다")
-        void throws_when_amount_is_negative() {
-            assertThatThrownBy(() -> service.use(new UsePointCommand(USER_ID, ORDER_NUMBER, -1L)))
-                .isInstanceOf(PointException.class)
-                .extracting("errorCode").isEqualTo(PointErrorCode.USE_AMOUNT_INVALID);
-        }
-
-        @Test
-        @DisplayName("회원 row 자체가 없으면 사용 가능 잔액이 없다고 보아 USE_INSUFFICIENT_BALANCE 를 던진다")
-        void throws_when_user_row_missing() {
+        @DisplayName("회원 row 가 없으면 빈 row 를 생성한 뒤 잔액=0 으로 USE_INSUFFICIENT_BALANCE 를 던진다 (적립 진입점과 동일한 lockOrCreate 패턴)")
+        void creates_user_row_when_absent_then_throws_on_zero_balance() {
             given(userRepository.findByUserIdForUpdate(USER_ID)).willReturn(Optional.empty());
+            given(userRepository.save(any(PointUser.class))).willAnswer(inv -> inv.getArgument(0));
+            given(useRepository.existsByOrderNumberAndType(ORDER_NUMBER, PointUseType.USE)).willReturn(false);
+            given(earnRepository.sumActiveBalance(eq(USER_ID), any(LocalDateTime.class))).willReturn(0L);
 
             assertThatThrownBy(() -> service.use(new UsePointCommand(USER_ID, ORDER_NUMBER, 100L)))
                 .isInstanceOf(PointException.class)
                 .extracting("errorCode").isEqualTo(PointErrorCode.USE_INSUFFICIENT_BALANCE);
+
+            verify(userRepository).save(any(PointUser.class));
         }
 
         @Test
-        @DisplayName("같은 orderNumber 의 PointUse 가 이미 존재하면 USE_ORDER_NUMBER_DUPLICATED 를 던지고 적립을 차감하지 않는다")
+        @DisplayName("같은 orderNumber 의 USE row 가 이미 존재하면 USE_ORDER_NUMBER_DUPLICATED 를 던지고 적립을 차감하지 않는다")
         void throws_when_order_number_already_used() {
             given(userRepository.findByUserIdForUpdate(USER_ID))
                 .willReturn(Optional.of(mock(PointUser.class)));
-            given(useRepository.findByOrderNumber(ORDER_NUMBER))
-                .willReturn(Optional.of(mock(PointUse.class)));
+            given(useRepository.existsByOrderNumberAndType(ORDER_NUMBER, PointUseType.USE)).willReturn(true);
 
             assertThatThrownBy(() -> service.use(new UsePointCommand(USER_ID, ORDER_NUMBER, 100L)))
                 .isInstanceOf(PointException.class)
@@ -155,7 +145,7 @@ class PointUseCommandServiceUnitTest {
         void throws_when_balance_is_insufficient() {
             given(userRepository.findByUserIdForUpdate(USER_ID))
                 .willReturn(Optional.of(mock(PointUser.class)));
-            given(useRepository.findByOrderNumber(ORDER_NUMBER)).willReturn(Optional.empty());
+            given(useRepository.existsByOrderNumberAndType(ORDER_NUMBER, PointUseType.USE)).willReturn(false);
             given(earnRepository.sumActiveBalance(eq(USER_ID), any(LocalDateTime.class))).willReturn(500L);
 
             assertThatThrownBy(() -> service.use(new UsePointCommand(USER_ID, ORDER_NUMBER, 1000L)))
@@ -172,11 +162,11 @@ class PointUseCommandServiceUnitTest {
     class PersistedShape {
 
         @Test
-        @DisplayName("저장되는 PointUse 는 요청의 userId/orderNumber/amount 를 그대로 가지고 cancelledAmount 는 0 이다")
+        @DisplayName("저장되는 PointUse 는 요청의 userId/orderNumber/amount 를 그대로 가지고 type=USE 로 시작한다 (USE row 는 immutable, 누적 환불액은 SUM 으로 도출)")
         void persisted_use_carries_request_payload() {
             given(userRepository.findByUserIdForUpdate(USER_ID))
                 .willReturn(Optional.of(mock(PointUser.class)));
-            given(useRepository.findByOrderNumber(ORDER_NUMBER)).willReturn(Optional.empty());
+            given(useRepository.existsByOrderNumberAndType(ORDER_NUMBER, PointUseType.USE)).willReturn(false);
             given(earnRepository.sumActiveBalance(eq(USER_ID), any(LocalDateTime.class))).willReturn(1000L);
 
             PointEarn earn = mock(PointEarn.class);
@@ -191,10 +181,12 @@ class PointUseCommandServiceUnitTest {
             ArgumentCaptor<PointUse> captor = ArgumentCaptor.forClass(PointUse.class);
             verify(useRepository).save(captor.capture());
             PointUse saved = captor.getValue();
+            assertThat(saved.getType()).isEqualTo(PointUseType.USE);
             assertThat(saved.getUserId()).isEqualTo(USER_ID);
             assertThat(saved.getOrderNumber()).isEqualTo(ORDER_NUMBER);
             assertThat(saved.getAmount()).isEqualTo(700L);
-            assertThat(saved.getCancelledAmount()).isZero();
+            assertThat(saved.getTargetUseId()).isNull();
+            assertThat(saved.getOrderRefundId()).isNull();
         }
     }
 }

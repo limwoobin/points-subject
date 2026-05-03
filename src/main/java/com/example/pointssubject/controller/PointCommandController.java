@@ -1,17 +1,21 @@
 package com.example.pointssubject.controller;
 
+import com.example.pointssubject.controller.dto.CancelEarnRequest;
 import com.example.pointssubject.controller.dto.CancelEarnResponse;
+import com.example.pointssubject.controller.dto.CancelUsePointRequest;
+import com.example.pointssubject.controller.dto.CancelUsePointResponse;
 import com.example.pointssubject.controller.dto.EarnPointRequest;
 import com.example.pointssubject.controller.dto.EarnPointResponse;
 import com.example.pointssubject.controller.dto.UsePointRequest;
 import com.example.pointssubject.controller.dto.UsePointResponse;
 import com.example.pointssubject.service.command.PointEarnCommandService;
 import com.example.pointssubject.service.command.PointUseCommandService;
-import com.example.pointssubject.service.command.dto.CancelEarnCommand;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Positive;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.validation.annotation.Validated;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -21,6 +25,7 @@ import org.springframework.web.bind.annotation.RestController;
 @RestController
 @RequestMapping("/api/points")
 @RequiredArgsConstructor
+@Validated
 public class PointCommandController {
 
     private final PointEarnCommandService earnService;
@@ -33,8 +38,9 @@ public class PointCommandController {
     }
 
     @PostMapping("/earn/{earnId}/cancel")
-    public CancelEarnResponse cancelEarn(@PathVariable Long earnId) {
-        var result = earnService.cancelEarn(new CancelEarnCommand(earnId));
+    public CancelEarnResponse cancelEarn(@PathVariable @Positive Long earnId,
+                                         @RequestBody @Valid CancelEarnRequest request) {
+        var result = earnService.cancelEarn(request.toCommand(earnId));
         return CancelEarnResponse.from(result);
     }
 
@@ -42,5 +48,11 @@ public class PointCommandController {
     public ResponseEntity<UsePointResponse> use(@RequestBody @Valid UsePointRequest request) {
         var result = useService.use(request.toCommand());
         return ResponseEntity.status(HttpStatus.CREATED).body(UsePointResponse.from(result));
+    }
+
+    @PostMapping("/cancel")
+    public CancelUsePointResponse cancelUse(@RequestBody @Valid CancelUsePointRequest request) {
+        var result = useService.cancelUse(request.toCommand());
+        return CancelUsePointResponse.from(result);
     }
 }

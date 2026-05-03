@@ -7,16 +7,13 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
-import jakarta.persistence.Version;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import org.hibernate.annotations.SQLDelete;
 import org.hibernate.annotations.SQLRestriction;
 
-/**
- * 사용 ↔ 적립 1원 단위 매핑. 한 PointUse 가 N 개의 PointEarn 으로부터 분배되어 차감된 결과.
- */
+/** 사용 ↔ 적립 1원 단위 매핑. */
 @Entity
 @Table(
     name = "point_use_detail",
@@ -44,10 +41,6 @@ public class PointUseDetail extends BaseEntity {
 
     @Column(name = "amount", nullable = false)
     private Long amount;
-
-    @Version
-    @Column(name = "version", nullable = false)
-    private Long version;
 
     private PointUseDetail(Long useId, Long earnId, Long amount) {
         this.useId = useId;
