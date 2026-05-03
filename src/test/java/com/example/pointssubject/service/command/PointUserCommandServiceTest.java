@@ -33,13 +33,13 @@ class PointUserCommandServiceTest extends AbstractIntegrationTest {
         @Test
         @DisplayName("회원 row 가 없는 상태에서 한도를 변경하면 row 가 자동 생성되고 한도가 설정된다")
         void creates_user_row_when_absent() {
-            assertThat(userRepository.findById(USER_ID)).isEmpty();
+            assertThat(userRepository.findByUserId(USER_ID)).isEmpty();
 
             UpdateUserMaxBalanceResult result = pointUserService.updateMaxBalance(
                 new UpdateUserMaxBalanceCommand(USER_ID, 5000L));
 
             assertThat(result.maxBalance()).isEqualTo(5000L);
-            PointUser saved = userRepository.findById(USER_ID).orElseThrow();
+            PointUser saved = userRepository.findByUserId(USER_ID).orElseThrow();
             assertThat(saved.getMaxBalance()).isEqualTo(5000L);
         }
 
@@ -47,23 +47,15 @@ class PointUserCommandServiceTest extends AbstractIntegrationTest {
         @DisplayName("기존 회원의 한도를 변경하면 DB 의 max_balance 가 새 값으로 갱신된다")
         void updates_existing_user_limit() {
             earnService.earn(new EarnPointCommand(USER_ID, 1000L, null));
-            assertThat(userRepository.findById(USER_ID).orElseThrow().getMaxBalance()).isNull();
+            assertThat(userRepository.findByUserId(USER_ID).orElseThrow().getMaxBalance()).isNull();
 
             pointUserService.updateMaxBalance(new UpdateUserMaxBalanceCommand(USER_ID, 2000L));
 
-            assertThat(userRepository.findById(USER_ID).orElseThrow().getMaxBalance()).isEqualTo(2000L);
+            assertThat(userRepository.findByUserId(USER_ID).orElseThrow().getMaxBalance()).isEqualTo(2000L);
         }
 
-        @Test
-        @DisplayName("maxBalance=null 로 한도를 변경하면 override 가 해제되어 max_balance 컬럼이 NULL 이 된다")
-        void resets_override_when_null() {
-            pointUserService.updateMaxBalance(new UpdateUserMaxBalanceCommand(USER_ID, 5000L));
-            assertThat(userRepository.findById(USER_ID).orElseThrow().getMaxBalance()).isEqualTo(5000L);
-
-            pointUserService.updateMaxBalance(new UpdateUserMaxBalanceCommand(USER_ID, null));
-
-            assertThat(userRepository.findById(USER_ID).orElseThrow().getMaxBalance()).isNull();
-        }
+        // null 해제 happy path 는 AdminAcceptanceTest.회원_한도_해제_시나리오 가 HTTP layer 에서 검증.
+        // 도메인 로직 격리 검증은 PointUserCommandServiceUnitTest.null_max_balance_resets_override_to_global_default.
     }
 
     @Nested
@@ -106,11 +98,11 @@ class PointUserCommandServiceTest extends AbstractIntegrationTest {
         @Test
         @DisplayName("회원 row 가 없는 상태에서 적립을 시도하면 max_balance=null 인 row 가 자동 생성되어 글로벌 default 한도가 적용된다")
         void earn_creates_user_row_with_null_max_balance() {
-            assertThat(userRepository.findById(USER_ID)).isEmpty();
+            assertThat(userRepository.findByUserId(USER_ID)).isEmpty();
 
             earnService.earn(new EarnPointCommand(USER_ID, 1000L, null));
 
-            PointUser created = userRepository.findById(USER_ID).orElseThrow();
+            PointUser created = userRepository.findByUserId(USER_ID).orElseThrow();
             assertThat(created.getMaxBalance()).isNull();
             assertThat(created.effectiveMaxBalance(policy.balanceMaxPerUser()))
                 .isEqualTo(policy.balanceMaxPerUser());
