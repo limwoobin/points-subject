@@ -21,15 +21,6 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 운영자 전용 — MANUAL source 적립 / 회원 한도 변경 권한.
- * <p>
- * 본 과제는 UI 가 없는 API-only 제출물이라 인증 게이트는 의도적으로 미적용.
- * 외부 노출 시 다음 중 하나 이상으로 보호 필수:
- * <ul>
- *   <li>Spring Security + HTTP Basic / OAuth2 (사내 IdP 연동)</li>
- *   <li>{@code X-Admin-Token} 헤더 + 정적 토큰 필터 (간이 환경)</li>
- *   <li>API Gateway / Reverse Proxy 레이어에서 path 기반 인증 강제</li>
- * </ul>
- * 추가로 audit log (현재 {@code point_action_log}) 에 호출자 식별자 (operator id) 기록 권장.
  */
 @RestController
 @RequestMapping("/api/admin")

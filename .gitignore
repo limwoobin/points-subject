@@ -35,3 +35,7 @@ out/
 
 ### VS Code ###
 .vscode/
+
+### Python venv (docs/aws-architecture.py 빌드용) ###
+.venv/
+__pycache__/
